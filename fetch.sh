@@ -45,7 +45,7 @@ fi
 ver=$(sed -n 's/.*"web-bml": *"[~^]*\([0-9][0-9.]*\)".*/\1/p' "$S/denpa/package.json" | head -1)
 [ -n "$ver" ] || { echo "denpa の package.json に web-bml がありません" >&2; exit 1; }
 tgz="$S/web-bml-$ver.tgz"
-want=$(grep "\"web-bml@$ver\"" "$S/denpa/bun.lock" | sed -n 's/.*"sha512-\([^"]*\)".*/\1/p' | head -1)
+want=$(grep -F "\"web-bml@$ver\"" "$S/denpa/bun.lock" | sed -n 's/.*"sha512-\([^"]*\)".*/\1/p' | head -1)
 [ -n "$want" ] || { echo "denpa の bun.lock に web-bml@$ver の sha512 がありません" >&2; exit 1; }
 sum() { openssl dgst -sha512 -binary "$1" | base64 -w0; }
 [ -f "$tgz" ] && [ "$(sum "$tgz")" = "$want" ] || get "https://registry.npmjs.org/web-bml/-/web-bml-$ver.tgz" "$tgz"
