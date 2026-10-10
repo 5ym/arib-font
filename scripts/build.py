@@ -36,6 +36,7 @@ WADA_SHIFT = -120  # 和田丸ゴは源柔よりベースラインが高い
 
 font = TTFont(f'{src}/GenJyuuGothic-Monospace-Regular.ttf', recalcTimestamp=False)
 wada = TTFont(f'{src}/wlcmaru2004aribu.ttf')
+assert font['head'].unitsPerEm == wada['head'].unitsPerEm == 1024  # 写すときに拡縮しない前提
 for tag in ('vhea', 'vmtx', 'FFTM', 'GDEF', 'GSUB', 'GPOS', 'PfEd'):
     if tag in font:
         del font[tag]
