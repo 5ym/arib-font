@@ -74,7 +74,7 @@ jobs:
           # woff2 は Google の woff2_decompress で解いて ttf と比べる
           sudo apt-get install -y -qq woff2 > /dev/null
           cp dist/denpa-font.woff2 build/check.woff2 && woff2_decompress build/check.woff2
-          tools/target/release/denpa-font verify dist/denpa-font.ttf build/merged.ttf ${PREV:+--prev prev.ttf} --woff2 build/check.ttf | tee verify.txt
+          tools/target/release/denpa-font verify dist/denpa-font.ttf ${PREV:+--prev prev.ttf} --woff2 build/check.ttf | tee verify.txt
           {
             echo "Denpa Font ${GITHUB_REF_NAME}"
             echo

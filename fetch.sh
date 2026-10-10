@@ -12,10 +12,11 @@ DENPA_COMMIT=cb5d9fe6cb4b6e00c0ed9490836c8aad88fb1067
 # EUC-JP の表 (WHATWG Encoding Standard の index-jis0208。ブラウザの TextDecoder と同じ字)
 # renovate: datasource=git-refs depName=https://github.com/whatwg/encoding branch=main
 WHATWG_ENCODING_COMMIT=a985b62a9b45c17da3e17a9f0a0b4e30c34c4a8a
-# 源柔ゴシック等幅 Regular 1.002.20150607 (最終版。http://jikasei.me/font/genjyuu/)。
-# 配布元の書庫 (OSDN のミラー) はいつ消えるか分からないので、出した ttf をこのリポジトリのリリースに置いてある
-GENJYUU_URL=https://github.com/danything/denpa-font/releases/download/source-genjyuu-20150607/GenJyuuGothic-Monospace-Regular.ttf
-GENJYUU_SHA256=f03d3b1a3a3558d72effacd8f4bc79795199782a7c501dc1f85fde1f49ca9c3b
+# BIZ UDゴシック Regular 1.051 (googlefonts/morisawa-biz-ud-gothic の GitHub リリース v1.051。OFL 1.1)。
+# 配布元の BIZUDGothic.zip から出した ttf と許諾文を、このリポジトリのリリースに置いてある (README の「元にしたフォント」)
+BIZ_URL=https://github.com/danything/denpa-font/releases/download/source-bizudgothic-1.051
+BIZ_SHA256=18956be217e02e08ca18dfe71aeb2110173e81c5f5d5c69d4833d854039e462a
+BIZ_OFL_SHA256=e753d7155d53c747d037a445e584c8ecfca6dd79846db610417e282a736b28bc
 
 # get <url> <出力> : 404 なら 1 を返す (ほかの失敗は止める)
 get() {
@@ -28,9 +29,11 @@ get() {
 }
 
 # 元フォント
-arc="$S/GenJyuuGothic-Monospace-Regular.ttf"
-echo "$GENJYUU_SHA256  $arc" | sha256sum -c --status 2>/dev/null || get "$GENJYUU_URL" "$arc"
-echo "$GENJYUU_SHA256  $arc" | sha256sum -c --quiet
+for f in "BIZUDGothic-Regular.ttf $BIZ_SHA256" "OFL.txt $BIZ_OFL_SHA256"; do
+  set -- $f
+  echo "$2  $S/$1" | sha256sum -c --status 2>/dev/null || get "$BIZ_URL/$1" "$S/$1"
+  echo "$2  $S/$1" | sha256sum -c --quiet
+done
 
 # denpa の表 (無いファイルは飛ばす。表はいずれ 1 つのファイルにまとまる)
 if [ "$(cat "$S/denpa/COMMIT" 2>/dev/null)" != "$DENPA_COMMIT" ]; then
@@ -56,4 +59,4 @@ tar -xzf "$tgz" -O package/dist/client/jis_to_unicode_map.js > "$S/jis_to_unicod
 [ -s "$S/index-jis0208.txt" ] && grep -q "$WHATWG_ENCODING_COMMIT" "$S/index-jis0208.commit" 2>/dev/null ||
   { get "https://raw.githubusercontent.com/whatwg/encoding/$WHATWG_ENCODING_COMMIT/index-jis0208.txt" "$S/index-jis0208.txt" &&
     echo "$WHATWG_ENCODING_COMMIT" > "$S/index-jis0208.commit"; }
-echo "取ってきた: 源柔ゴシック、denpa $DENPA_COMMIT、web-bml $ver、index-jis0208 $WHATWG_ENCODING_COMMIT"
+echo "取ってきた: BIZ UDゴシック、denpa $DENPA_COMMIT、web-bml $ver、index-jis0208 $WHATWG_ENCODING_COMMIT"

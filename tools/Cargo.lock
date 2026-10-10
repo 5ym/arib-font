@@ -80,7 +80,6 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 name = "denpa-font"
 version = "0.1.0"
 dependencies = [
- "skera",
  "skrifa",
  "ttf2woff2",
  "write-fonts",
@@ -196,18 +195,6 @@ dependencies = [
  "font-types",
  "once_cell",
  "yoke",
-]
-
-[[package]]
-name = "skera"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "531045338e36ad05b9652912a47ba38a935d0eaa0293c3e33d8112cfa414c14b"
-dependencies = [
- "hashbrown",
- "skrifa",
- "thiserror",
- "write-fonts",
 ]
 
 [[package]]

@@ -1,38 +1,34 @@
-//! 源柔ゴシック等幅に無い字を、源柔の字の輪郭と、源柔の線の太さ・丸みに合わせた図形で描く。
-//! 描き方の数値はこのファイルの頭 (定数) にまとめる。座標は em 1024。
+//! BIZ UDゴシックに無い記号を、BIZ UDゴシックの字の輪郭と、その線の太さに合わせた図形で描く。
+//! 描き方の数値はこのファイルの頭 (定数) にまとめる。座標は em 1024。描いた字もほかの字と同じく丸める (round.rs)。
+//! 字の部品を組む字 (漢字・囲み文字・分数など) は data/parts.txt。
 //!
 //! 図形の向き: TrueType は塗る輪郭が時計回り、抜く輪郭が反時計回り。重なった塗りは足し合わさるので
 //! (非ゼロ規則)、白抜きは塗りの内側にだけ置く。
 
-use crate::sfnt::{Contour, Glyphs, Pt};
 use crate::err::{Ctx, Result};
-use std::collections::BTreeMap;
+use crate::make::Base;
+use crate::sfnt::{Contour, Pt};
 use std::f64::consts::PI;
 
-type Cmap = BTreeMap<u32, u32>;
 type Shape = Vec<Contour>;
 
-// ---------------------------------------------------------------- 数値 (源柔から測ったもの)
+// ---------------------------------------------------------------- 数値 (BIZ UDゴシックから測ったもの)
 
 /// 字面の中心 (□ ○ の中心)
 const CX: f64 = 512.0;
 const CY: f64 = 389.0;
 /// □ の外枠 (102〜922, -20〜799) と線の太さ
 const BOX: (f64, f64, f64, f64) = (102.0, -20.0, 922.0, 799.0);
-const BOX_W: f64 = 38.0;
-/// ○ の外の半径と線の太さ (51〜973)
-const CIRCLE_R: f64 = 461.0;
-const CIRCLE_W: f64 = 38.0;
-/// 絵の線 (☁ ☂ の線に合わせる)
-const LINE: f64 = 44.0;
+const BOX_W: f64 = 68.0;
+/// ○ の外の半径と線の太さ (53〜970)
+const CIRCLE_R: f64 = 458.0;
+const CIRCLE_W: f64 = 67.0;
+/// 絵の線
+const LINE: f64 = 60.0;
 /// 太い線 (⭕ などの heavy)
-const HEAVY: f64 = 92.0;
-/// 角の丸み
+const HEAVY: f64 = 120.0;
+/// 角の丸み (図形の角。描いたあとでほかの字と同じく丸めるので、ここでは小さい角だけ)
 const ROUND: f64 = 36.0;
-/// 楽器の略記: 半角の字を横・縦にこの比で縮めて並べる
-const COMPOSE_SX: f64 = 0.5;
-const COMPOSE_SY: f64 = 0.8;
-
 // ---------------------------------------------------------------- 図形
 
 fn area(c: &[(f64, f64)]) -> f64 {
@@ -80,12 +76,12 @@ fn ellipse(cx: f64, cy: f64, rx: f64, ry: f64) -> Shape {
         .collect()]
 }
 
-fn circle(cx: f64, cy: f64, r: f64) -> Shape {
+pub fn circle(cx: f64, cy: f64, r: f64) -> Shape {
     ellipse(cx, cy, r, r)
 }
 
 /// 輪 (外の半径と太さ)
-fn ring(cx: f64, cy: f64, r: f64, w: f64) -> Shape {
+pub fn ring(cx: f64, cy: f64, r: f64, w: f64) -> Shape {
     let mut s = circle(cx, cy, r);
     s.extend(reverse(circle(cx, cy, r - w)));
     s
@@ -98,7 +94,7 @@ fn ellipse_ring(cx: f64, cy: f64, rx: f64, ry: f64, w: f64) -> Shape {
 }
 
 /// 角を丸めた四角 (塗り)
-fn rrect(x0: f64, y0: f64, x1: f64, y1: f64, r: f64) -> Shape {
+pub fn rrect(x0: f64, y0: f64, x1: f64, y1: f64, r: f64) -> Shape {
     let r = r.min((x1 - x0) / 2.0).min((y1 - y0) / 2.0);
     if r <= 0.5 {
         return poly(&[(x0, y1), (x1, y1), (x1, y0), (x0, y0)]);
@@ -121,7 +117,7 @@ fn rrect(x0: f64, y0: f64, x1: f64, y1: f64, r: f64) -> Shape {
 }
 
 /// 角丸の枠 (外形と太さ)
-fn frame(x0: f64, y0: f64, x1: f64, y1: f64, r: f64, w: f64) -> Shape {
+pub fn frame(x0: f64, y0: f64, x1: f64, y1: f64, r: f64, w: f64) -> Shape {
     let mut s = rrect(x0, y0, x1, y1, r);
     s.extend(reverse(rrect(x0 + w, y0 + w, x1 - w, y1 - w, (r - w).max(0.0))));
     s
@@ -212,78 +208,34 @@ fn bbox(s: &Shape) -> (f64, f64, f64, f64) {
     (a, b, c, d)
 }
 
-struct Base<'a> {
-    glyphs: &'a Glyphs,
-    cmap: &'a Cmap,
+struct Base2<'a> {
+    base: &'a Base,
 }
 
-impl Base<'_> {
-    /// 源柔の字の輪郭
+impl Base2<'_> {
+    /// BIZ UDゴシックの字の輪郭
     fn glyph(&self, ch: char) -> Result<Shape> {
-        let gid = *self.cmap.get(&(ch as u32)).ctx(|| format!("源柔に {ch} がありません"))?;
-        self.glyphs.outline(gid as usize)
+        Ok(self.base.get(&(ch as u32)).ctx(|| format!("BIZ UDゴシックに {ch} がありません"))?.0.clone())
     }
-    /// 源柔の字の、x が split より左 (left) か右の輪郭だけ
-    fn half(&self, ch: char, split: f64, left: bool) -> Result<Shape> {
-        Ok(self
-            .glyph(ch)?
-            .into_iter()
-            .filter(|c| {
-                let xs = c.iter().map(|q| q.x);
-                if left { xs.fold(f64::MIN, f64::max) <= split } else { xs.fold(f64::MAX, f64::min) >= split }
-            })
-            .collect())
-    }
-    /// 源柔の字の、y が split より上 (upper) か下の輪郭だけ
-    fn half_y(&self, ch: char, split: f64, upper: bool) -> Result<Shape> {
-        Ok(self
-            .glyph(ch)?
-            .into_iter()
-            .filter(|c| {
-                let ys = c.iter().map(|q| q.y);
-                if upper { ys.fold(f64::MAX, f64::min) >= split } else { ys.fold(f64::MIN, f64::max) <= split }
-            })
-            .collect())
-    }
-}
-
-/// 冠 (源柔の字 top の y が split より上の輪郭) と脚 (bottom の y が split より下の輪郭) を、
-/// 上下に mid で分けて縦に縮めて組む
-fn kanji_tb(b: &Base, (top, ts): (char, f64), (bottom, bs): (char, f64), mid: f64) -> Result<Shape> {
-    let gap = 50.0;
-    let t = b.half_y(top, ts, true)?;
-    let u = b.half_y(bottom, bs, false)?;
-    let (_, ty0, _, ty1) = bbox(&t);
-    let (_, uy0, _, uy1) = bbox(&u);
-    let kt = (ty1 - (mid + gap / 2.0)) / (ty1 - ty0);
-    let ku = ((mid - gap / 2.0) - uy0) / (uy1 - uy0);
-    let mut out = place(t, 0.0, ty1, 1.0, kt, 0.0, ty1);
-    out.extend(place(u, 0.0, uy0, 1.0, ku, 0.0, uy0));
-    Ok(out)
 }
 
 // ---------------------------------------------------------------- 字ごと
 
 /// 描く字。無ければ None
-pub fn draw(c: u32, glyphs: &Glyphs, cmap: &Cmap) -> Result<Option<Shape>> {
-    let b = Base { glyphs, cmap };
+pub fn draw(c: u32, base: &Base) -> Result<Option<Shape>> {
+    let b = Base2 { base };
     let (bx0, by0, bx1, by1) = BOX;
     let mut s: Shape = vec![];
     match c {
-        // ---- 源柔の字をそのまま・回して使う
+        // ---- BIZ UDゴシックの字をそのまま・回して使う
         0x0FD6 => s = b.glyph('卍')?, // ࿖ 左向きの卍 (地図の寺)
         0x26C4 => s = b.glyph('☃')?, // ⛄ 雪だるま (雪なし)
         0x26C9 => s = rotate(b.glyph('☖')?, CX, CY, 180.0), // ⛉ 白い将棋の駒を逆さに
         0x26CA => s = rotate(b.glyph('☗')?, CX, CY, 180.0), // ⛊ 黒い将棋の駒を逆さに
 
-        // ---- 分数 (源柔の ⅓ の数字の置き場に、半角の数字を同じ高さで置く)
-        0x2150 => s = fraction(&b, None, "7")?,
-        0x2151 => s = fraction(&b, None, "9")?,
-        0x2152 => s = fraction(&b, None, "10")?,
-        0x2189 => s = fraction(&b, Some("0"), "3")?,
 
         // ---- 丸・四角・楕円
-        0x2B1B => s = b.glyph('■')?.into_iter().collect(), // ⬛ (源柔の ■ と同じ大きさ)
+        0x2B1B => s = b.glyph('■')?.into_iter().collect(), // ⬛ (■ と同じ大きさ)
         0x2B24 => s = circle(CX, CY, CIRCLE_R),             // ⬤
         0x2B2E => s = ellipse(CX, CY, 230.0, CIRCLE_R),      // ⬮ 縦長の黒い楕円
         0x2B2F => s = ellipse_ring(CX, CY, 230.0, CIRCLE_R, CIRCLE_W), // ⬯
@@ -311,7 +263,7 @@ pub fn draw(c: u32, glyphs: &Glyphs, cmap: &Cmap) -> Result<Option<Shape>> {
             s.extend(circle(CX, CY, 120.0));
         }
         0x27D0 => {
-            // ⟐ ひし形に点 (源柔の ◇ に)
+            // ⟐ ひし形に点 (◇ に)
             s = b.glyph('◇')?;
             s.extend(circle(CX, CY, 90.0));
         }
@@ -354,7 +306,7 @@ pub fn draw(c: u32, glyphs: &Glyphs, cmap: &Cmap) -> Result<Option<Shape>> {
             s.extend(circle(CX, 50.0, 85.0));
         }
         0x2985 | 0x2986 => {
-            // ⦅ ⦆ 二重の丸括弧 (源柔の （ を2つ重ねる)
+            // ⦅ ⦆ 二重の丸括弧 (（ を2つ重ねる)
             let p = b.glyph('（')?;
             let (x0, _, x1, _) = bbox(&p);
             let w = x1 - x0;
@@ -362,6 +314,20 @@ pub fn draw(c: u32, glyphs: &Glyphs, cmap: &Cmap) -> Result<Option<Shape>> {
             s.extend(place(p, 0.0, 0.0, 1.0, 1.0, w * 0.55, 0.0));
             if c == 0x2986 {
                 s = mirror(s);
+            }
+        }
+
+        0x26BE => {
+            // ⚾ 野球の球: ○ と同じ輪に、左右の縫い目 (内へ反った弧を点線で)
+            s = ring(CX, CY, CIRCLE_R, CIRCLE_W);
+            for side in [-1.0, 1.0] {
+                let (ox, r) = (CX + side * 640.0, 470.0);
+                for k in 0..5 {
+                    let a = (-40.0 + k as f64 * 20.0f64).to_radians();
+                    let (a0, a1) = (a - 0.10, a + 0.10);
+                    let pt = |t: f64| (ox - side * r * t.cos(), CY + r * t.sin());
+                    s.extend(capsule(pt(a0), pt(a1), LINE * 0.8));
+                }
             }
         }
 
@@ -375,7 +341,7 @@ pub fn draw(c: u32, glyphs: &Glyphs, cmap: &Cmap) -> Result<Option<Shape>> {
             }
         }
         0x26C5 => {
-            // ⛅ 雲の後ろの太陽: 源柔の ☀ と、☁ の外形を塗ったもの
+            // ⛅ 雲の後ろの太陽: ☀ と、☁ の外形を塗ったもの
             s = place(b.glyph('☀')?, CX, CY, 0.62, 0.62, 650.0, 560.0);
             s.extend(place(cloud(&b)?, CX, CY, 0.8, 0.8, 440.0, 260.0));
         }
@@ -660,85 +626,26 @@ pub fn draw(c: u32, glyphs: &Glyphs, cmap: &Cmap) -> Result<Option<Shape>> {
             s.extend(capsule((a.0 + 70.0, a.1 - 80.0), (z.0 - 70.0, z.1 + 80.0), LINE * 1.6));
         }
 
-        // ---- 漢字 (源柔の偏と旁を組む)
-        0x55BC => s = kanji(&b, ('吡', 335.0), Right::Scale('急'))?, // 喼 ⿰口急
-        0x40EF => s = kanji(&b, ('硎', 360.0), Right::Scale('楽'))?, // 䃯 ⿰石楽
-        0x9FC5 => s = kanji(&b, ('祾', 380.0), Right::From('澪', 280.0))?, // 鿅 ⿰礻零
-        0x242CE => s = kanji_tb(&b, ('煎', 140.0), ('炎', 460.0), 330.0)?, // 𤋎 ⿱前火 (煎 の 前・炎 の下の 火)
         _ => return Ok(None),
     }
     Ok(Some(s))
 }
 
 /// ⌺ (□ にひし形): 元の □ に、□ と同じ線の太さのひし形を内に描く (頂点は □ の線の真ん中)
-fn quad_diamond(b: &Base) -> Result<Shape> {
+fn quad_diamond(b: &Base2) -> Result<Shape> {
     let mut out = b.glyph('□')?;
     let (x0, y0, x1, y1) = bbox(&out);
     let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
     let ro = (x1 - x0) / 2.0 - BOX_W / 2.0;
-    let rh = |v: f64| {
-        // 前の作り方 (Python の round) と同じ点にする
-        let r = v.round();
-        if (v - v.trunc()).abs() == 0.5 && r % 2.0 != 0.0 { r - v.signum() } else { r }
-    };
     for (r, sign) in [(ro, 1.0), (ro - BOX_W * 2f64.sqrt(), -1.0)] {
         let pts = [(cx, cy + r), (cx + sign * r, cy), (cx, cy - r), (cx - sign * r, cy)];
-        out.push(pts.iter().map(|&(x, y)| Pt { x: rh(x), y: rh(y), on: true }).collect());
+        out.push(pts.iter().map(|&(x, y)| Pt { x, y, on: true }).collect());
     }
     Ok(out)
 }
 
-/// 分数: 源柔の ⅓ の分子・斜線・分母の置き場を測り、数字を同じ高さで置く
-fn fraction(b: &Base, num: Option<&str>, den: &str) -> Result<Shape> {
-    let third = b.glyph('⅓')?;
-    let mut slash = vec![];
-    let mut n1 = vec![];
-    let mut d3 = vec![];
-    for c in third {
-        let (x0, y0, x1, _) = bbox(&vec![c.clone()]);
-        if x1 - x0 > 400.0 {
-            slash.push(c);
-        } else if y0 > 200.0 {
-            n1.push(c);
-        } else {
-            d3.push(c);
-        }
-    }
-    let digits = |text: &str, slot: &Shape| -> Result<Shape> {
-        let (sx0, sy0, sx1, sy1) = bbox(slot);
-        let h = sy1 - sy0;
-        let gap = h * 0.08;
-        let mut parts = vec![];
-        let mut width = 0.0;
-        for ch in text.chars() {
-            let g = b.glyph(ch)?;
-            let (x0, y0, x1, y1) = bbox(&g);
-            let k = h / (y1 - y0);
-            let p = place(g, x0, y0, k, k, 0.0, 0.0);
-            let w = (x1 - x0) * k;
-            parts.push((p, width));
-            width += w + gap;
-        }
-        width -= gap;
-        let fit = ((sx1 - sx0) * 1.15 / width).min(1.0);
-        let cx = (sx0 + sx1) / 2.0;
-        let mut out = vec![];
-        for (p, x) in parts {
-            out.extend(place(p, 0.0, 0.0, fit, 1.0, cx - width * fit / 2.0 + x * fit, sy0));
-        }
-        Ok(out)
-    };
-    let mut out = slash;
-    out.extend(match num {
-        Some(t) => digits(t, &n1)?,
-        None => n1,
-    });
-    out.extend(if den == "3" { d3 } else { digits(den, &d3)? });
-    Ok(out)
-}
-
-/// ☁ の外形を塗ったもの (源柔の ☁ は線なので、外の輪郭だけ使う)
-fn cloud(b: &Base) -> Result<Shape> {
+/// ☁ の外形 (いちばん大きい輪郭) を塗ったもの
+fn cloud(b: &Base2) -> Result<Shape> {
     let g = b.glyph('☁')?;
     let big = g
         .into_iter()
@@ -854,49 +761,4 @@ fn road_sign(kind: u8) -> Shape {
         _ => {}
     }
     s
-}
-
-enum Right {
-    /// 源柔の字そのものを、偏の右に入るよう横に縮める
-    Scale(char),
-    /// 源柔の字の x が split より右の輪郭 (旁) を、偏の右に入るよう横に縮める
-    From(char, f64),
-}
-
-/// 偏 (源柔の字 host の x が split より左の輪郭) と旁を組んで漢字にする
-fn kanji(b: &Base, (host, split): (char, f64), right: Right) -> Result<Shape> {
-    let left = b.half(host, split, true)?;
-    let (_, _, lx1, _) = bbox(&left);
-    let r = match right {
-        Right::Scale(ch) => b.glyph(ch)?,
-        Right::From(ch, sp) => b.half(ch, sp, false)?,
-    };
-    let (rx0, _, rx1, _) = bbox(&r);
-    // 偏の右に、源柔の字の右端 (980 ほど) まで
-    let gap = 40.0;
-    let (to0, to1) = (lx1 + gap, 975.0);
-    let k = (to1 - to0) / (rx1 - rx0);
-    let mut out = left;
-    out.extend(place(r, rx0, 0.0, k, 1.0, to0, 0.0));
-    Ok(out)
-}
-
-/// 楽器の略記: 半角の字を横に縮めて並べる。1マスに4字まで入る幅 (半角の半分) にそろえ、縦は字面の中心を保って縮める
-pub fn compose(glyphs: &Glyphs, cmap: &Cmap, text: &str) -> Result<Shape> {
-    let b = Base { glyphs, cmap };
-    let n = text.chars().count() as f64;
-    let width = 512.0 * COMPOSE_SX * n;
-    let mut x = if text.starts_with('(') && !text.ends_with(')') {
-        1024.0 - width // 左半分: 右に寄せて次のマスへ続ける
-    } else if text.ends_with(')') && !text.starts_with('(') {
-        0.0
-    } else {
-        (1024.0 - width) / 2.0
-    };
-    let mut out = vec![];
-    for ch in text.chars() {
-        out.extend(place(b.glyph(ch)?, 0.0, 0.0, COMPOSE_SX, COMPOSE_SY, x, 280.0 * (1.0 - COMPOSE_SY)));
-        x += 512.0 * COMPOSE_SX;
-    }
-    Ok(out)
 }
