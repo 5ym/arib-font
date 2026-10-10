@@ -90,6 +90,7 @@ fn source(src: &Source, base: &Base) -> Result<Shape> {
         Source::Disc(cx, cy, r) => draw::circle(cx, cy, r),
         Source::Frame(x0, y0, x1, y1, w) => draw::frame(x0, y0, x1, y1, 0.0, w),
         Source::Rect(x0, y0, x1, y1) => draw::rrect(x0, y0, x1, y1, 0.0),
+        Source::Text(_) => return Err("字の並びは先にばらす".into()),
     })
 }
 
@@ -101,12 +102,55 @@ struct Placed {
     grow: (f64, f64),
 }
 
+/// 字の並び (Source::Text) を、1 字ずつの部品にばらす。墨の幅で詰め (字の間は TEXT_GAP)、
+/// 基線から TEXT_BAND の高さを縦横同じ比で置き方の枠に収める
+fn expand(parts: &[Part], base: &Base) -> Result<Vec<Part>> {
+    const TEXT_BAND: (f64, f64) = (-30.0, 830.0);
+    const TEXT_GAP: f64 = 90.0;
+    let mut out = vec![];
+    for p in parts {
+        let Source::Text(t) = &p.src else {
+            out.push(p.clone());
+            continue;
+        };
+        let (Place::Fit(x0, y0, x1, y1) | Place::Stretch(x0, y0, x1, y1)) = p.place else {
+            return Err(format!("字の並び \"{t}\" には置く枠 (~ か >) が要ります").into());
+        };
+        let mut inks = vec![];
+        for ch in t.chars() {
+            let shape = source(&Source::Char(ch as u32), base)?;
+            inks.push((ch, bbox(&round::flatten(&shape, FLAT_TOL))));
+        }
+        let width = |b: &Option<(f64, f64, f64, f64)>| b.map_or(4.0 * TEXT_GAP, |b| b.2 - b.0);
+        let total = inks.iter().map(|(_, b)| width(b)).sum::<f64>() + TEXT_GAP * (inks.len().max(1) - 1) as f64;
+        let band = TEXT_BAND.1 - TEXT_BAND.0;
+        let s = ((x1 - x0) / total).min((y1 - y0) / band);
+        let mut x = (x0 + x1) / 2.0 - total * s / 2.0;
+        let yb = (y0 + y1) / 2.0 - band * s / 2.0;
+        for (ch, b) in &inks {
+            if let Some(b) = b {
+                out.push(Part {
+                    sub: p.sub,
+                    src: Source::Char(*ch as u32),
+                    pick: None,
+                    crop: Some(vec![(b.0, TEXT_BAND.0), (b.2, TEXT_BAND.0), (b.2, TEXT_BAND.1), (b.0, TEXT_BAND.1)]),
+                    place: Place::Stretch(x, yb, x + (b.2 - b.0) * s, yb + band * s),
+                    weight: p.weight,
+                });
+            }
+            x += (width(b) + TEXT_GAP) * s;
+        }
+    }
+    Ok(out)
+}
+
 /// 部品を置いて (拡縮・切り抜き) 格子に塗る
 pub fn compose(parts: &[Part], base: &Base) -> Result<(Grid, Vec<bool>)> {
+    let parts = expand(parts, base)?;
     let mut placed = vec![];
     let mut all: Option<(f64, f64, f64, f64)> = None;
     let mut margin: f64 = 0.0;
-    for p in parts {
+    for p in &parts {
         let mut shape = source(&p.src, base)?;
         if let Some(pick) = &p.pick {
             let all = std::mem::take(&mut shape);

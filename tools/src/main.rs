@@ -158,11 +158,12 @@ fn build(version: &str) -> Result<()> {
     }
     let (notdef, base) = read_base(&font)?;
     let mut repertoire = repertoire::load(src)?;
-    // 試すとき: DENPA_ONLY に書いた字だけ作る
+    let parts = parts::load("data/parts.txt")?;
+    // 試すとき: DENPA_ONLY に書いた字だけ作る (parts.txt にあれば、denpa の表にまだ無い字も)
     if let Ok(only) = std::env::var("DENPA_ONLY") {
         repertoire.codepoints.retain(|&c| char::from_u32(c).is_some_and(|ch| only.contains(ch)));
+        repertoire.codepoints.extend(only.chars().map(|ch| ch as u32).filter(|c| parts.contains_key(c)));
     }
-    let parts = parts::load("data/parts.txt")?;
     let sharp: BTreeSet<u32> = read_codepoints("data/sharp.txt")?.into_iter().collect();
 
     // 作る字の段取り: 部品を組む (parts.txt) → 元の字 → 描く (draw.rs)。私用領域は同じ区点の字へ

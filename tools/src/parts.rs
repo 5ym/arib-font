@@ -20,6 +20,8 @@ pub enum Source {
     Frame(f64, f64, f64, f64, f64),
     /// 塗った四角
     Rect(f64, f64, f64, f64),
+    /// 半角の字の並び ("5.1" など)。墨の幅で詰めて並べ、置き方の枠に縦横同じ比で収める
+    Text(String),
 }
 
 #[derive(Clone, Debug)]
@@ -101,6 +103,9 @@ fn part(text: &str) -> Result<Part> {
     } else if let Some((v, r)) = shape("frame", s).filter(|(v, _)| v.len() == 5) {
         src = Source::Frame(v[0], v[1], v[2], v[3], v[4]);
         rest = r;
+    } else if let Some((t, r)) = s.strip_prefix('"').and_then(|r| r.split_once('"')) {
+        src = Source::Text(t.to_string());
+        rest = r.to_string();
     } else if let Some((v, r)) = shape("rect", s).filter(|(v, _)| v.len() == 4) {
         src = Source::Rect(v[0], v[1], v[2], v[3]);
         rest = r;
