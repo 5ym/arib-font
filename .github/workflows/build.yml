@@ -43,13 +43,16 @@ jobs:
           VERSION: ${{ steps.v.outputs.version }}
           SOURCE_DATE_EPOCH: ${{ steps.v.outputs.epoch }}
         run: |
+          # 元フォント・denpa の表などを取ってきて確かめる (道具はネットに触らない)
+          sh fetch.sh
           cargo test --release --locked --manifest-path tools/Cargo.toml
           cargo build --release --locked --manifest-path tools/Cargo.toml
           tools/target/release/denpa-font build "$VERSION"
+          (cd dist && sha256sum denpa-font.ttf denpa-font.woff2 > SHA256SUMS && cat SHA256SUMS)
           # 同じ入力から同じバイト列になること
           cp dist/SHA256SUMS first.sha256
           tools/target/release/denpa-font build "$VERSION" > /dev/null
-          diff first.sha256 dist/SHA256SUMS
+          (cd dist && sha256sum -c ../first.sha256)
 
       - name: Previous release
         env:
@@ -68,7 +71,10 @@ jobs:
       - name: Verify
         run: |
           set -o pipefail
-          tools/target/release/denpa-font verify dist/denpa-font.ttf build/merged.ttf ${PREV:+prev.ttf} | tee verify.txt
+          # woff2 は Google の woff2_decompress で解いて ttf と比べる
+          sudo apt-get install -y -qq woff2 > /dev/null
+          cp dist/denpa-font.woff2 build/check.woff2 && woff2_decompress build/check.woff2
+          tools/target/release/denpa-font verify dist/denpa-font.ttf build/merged.ttf ${PREV:+--prev prev.ttf} --woff2 build/check.ttf | tee verify.txt
           {
             echo "Denpa Font ${GITHUB_REF_NAME}"
             echo

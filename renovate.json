@@ -5,15 +5,24 @@
   ],
   "customManagers": [
     {
-      "description": "字の一覧を読む denpa の版 (tools/src/repertoire.rs の DENPA_COMMIT)。main の先頭のコミットを追う",
+      "description": "fetch.sh が取る表の版 (denpa の DENPA_COMMIT・WHATWG の WHATWG_ENCODING_COMMIT)。main の先頭のコミットを追う",
       "customType": "regex",
       "managerFilePatterns": [
-        "/^tools/src/repertoire\\.rs$/"
+        "/^fetch\\.sh$/"
       ],
       "matchStrings": [
-        "// renovate: datasource=git-refs depName=(?<depName>\\S+) branch=(?<currentValue>\\S+)\\s+pub const \\w+: &str = \"(?<currentDigest>[0-9a-f]{40})\""
+        "# renovate: datasource=git-refs depName=(?<depName>\\S+) branch=(?<currentValue>\\S+)\\s+\\w+=(?<currentDigest>[0-9a-f]{40})"
       ],
       "datasourceTemplate": "git-refs"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "fontations (skrifa・write-fonts・skera) は同じ版どうしでしか組めないので 1 本の PR にまとめ、CI (verify が字を全部比べる) が通れば入れる",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["skrifa", "write-fonts", "read-fonts", "skera"],
+      "groupName": "fontations",
+      "automerge": true
     }
   ]
 }

@@ -5,12 +5,12 @@
 //!   cargo run ... -- repertoire                                            収める字の一覧を見る
 
 mod draw;
+mod err;
 mod repertoire;
 mod sfnt;
-mod sources;
 mod verify;
 
-use anyhow::{bail, Context, Result};
+use err::{bail, Ctx, Result};
 use repertoire::Pua;
 use sfnt::{put_i16, put_u16, Glyphs};
 use std::collections::BTreeMap;
@@ -38,13 +38,15 @@ fn main() -> Result<()> {
     match args.first().map(String::as_str) {
         Some("build") => build(args.get(1).map_or("0.0", String::as_str)),
         Some("verify") => {
+            // verify <ttf> <絞る前の ttf> [--prev 前の版の ttf] [--woff2 woff2 を解いた ttf]
+            let opt = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).map(Path::new);
             if args.len() < 3 {
-                bail!("verify <ttf> <絞る前の ttf> [前の版の ttf]");
+                bail!("verify <ttf> <絞る前の ttf> [--prev ttf] [--woff2 ttf]");
             }
-            verify::run(Path::new(&args[1]), Path::new(&args[2]), args.get(3).map(Path::new))
+            verify::run(Path::new(&args[1]), Path::new(&args[2]), opt("--prev"), opt("--woff2"))
         }
         Some("repertoire") => repertoire::run(Path::new(SRC)),
-        _ => bail!("build <版> | verify <ttf> <merged> [prev] | repertoire"),
+        _ => bail!("build <版> | verify <ttf> <merged> [--prev ttf] [--woff2 ttf] | repertoire (先に fetch.sh)"),
     }
 }
 
@@ -62,17 +64,16 @@ pub fn read_codepoints(path: &str) -> Result<Vec<u32>> {
             continue;
         }
         let h = s.split_whitespace().next().unwrap().trim_start_matches("U+");
-        out.push(u32::from_str_radix(h, 16).with_context(|| format!("{path}: {line}"))?);
+        out.push(u32::from_str_radix(h, 16).ctx(|| format!("{path}: {line}"))?);
     }
     Ok(out)
 }
 
 fn build(version: &str) -> Result<()> {
-    let (major, minor) = version.split_once('.').context("版は X.Y")?;
+    let (major, minor) = version.split_once('.').ctx(|| "版は X.Y".into())?;
     let (major, minor): (u16, u16) = (major.parse()?, minor.parse()?);
     let epoch: i64 = std::env::var("SOURCE_DATE_EPOCH").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
     let src = Path::new(SRC);
-    sources::fetch(&sources::GENJYUU, src)?;
     let gb = fs::read(src.join("GenJyuuGothic-Monospace-Regular.ttf"))?;
     let base = FontRef::new(&gb)?;
     if base.head()?.units_per_em() != 1024 {
@@ -167,7 +168,7 @@ fn build(version: &str) -> Result<()> {
     let cm = write_fonts::tables::cmap::Cmap::from_mappings(
         cmap.iter().filter_map(|(&c, &g)| char::from_u32(c).map(|ch| (ch, GlyphId::new(g)))),
     )
-    .map_err(|e| anyhow::anyhow!("cmap: {e:?}"))?;
+    .map_err(|e| format!("cmap: {e:?}"))?;
     b.add_table(&cm)?;
     let names = [
         (0, COPYRIGHT.to_string()),
@@ -194,15 +195,9 @@ fn build(version: &str) -> Result<()> {
     let font = FontRef::new(&merged)?;
     let ttf = fix_extents(&subset(&font, &rep)?)?;
     fs::write("dist/denpa-font.ttf", &ttf)?;
-    let woff2 = ttf2woff2::encode(&ttf, ttf2woff2::BrotliQuality::from(11u8)).map_err(|e| anyhow::anyhow!("woff2: {e}"))?;
+    let woff2 = ttf2woff2::encode(&ttf, ttf2woff2::BrotliQuality::from(11u8)).map_err(|e| format!("woff2: {e}"))?;
     fs::write("dist/denpa-font.woff2", &woff2)?;
-    let sums = format!(
-        "{}  denpa-font.ttf\n{}  denpa-font.woff2\n",
-        sources::sha256_hex(&ttf),
-        sources::sha256_hex(&woff2)
-    );
-    fs::write("dist/SHA256SUMS", &sums)?;
-    print!("{sums}");
+    println!("dist/denpa-font.ttf {} バイト、dist/denpa-font.woff2 {} バイト", ttf.len(), woff2.len());
     Ok(())
 }
 
@@ -232,7 +227,7 @@ pub fn subset(font: &FontRef, unicodes: &[u32]) -> Result<Vec<u8>> {
     let mut langs: IntSet<u16> = IntSet::empty();
     langs.invert();
     let plan = Plan::new(&gids, &u, font, flags, &drop, &scripts, &features, &name_ids, &langs);
-    subset_font(font, &plan).map_err(|e| anyhow::anyhow!("絞り込み: {e}"))
+    Ok(subset_font(font, &plan).map_err(|e| format!("絞り込み: {e}"))?)
 }
 
 /// 絞ったあとの字で head の外枠と hhea の余白の最小・最大を測り直す (絞り込みは元のフォント全体の値のまま残す)

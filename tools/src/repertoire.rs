@@ -1,29 +1,24 @@
-//! 収める字の一覧を、denpa の表 (版を固定) から作る。フォント側に表の写しは持たない。
+//! 収める字の一覧を、denpa の表から作る。フォント側に表の写しは持たない。
+//! 表は fetch.sh が build/src に取ってくる (denpa の版は fetch.sh の DENPA_COMMIT)。ここは読むだけ。
 //!
-//! 読む表 (danything/denpa の DENPA_COMMIT の版):
-//!   - src/lib/ts/b24-tables.ts   字幕の文字の表 (かな・英数・半角記号・追加記号・JIS の差分・DRCS の置き換え先)
-//!   - src/lib/ts/aribtext-gaiji.ts  番組表などの ARIB 外字の表 (GAIJI)
-//!   - src/lib/fold.ts            検索の寄せの表 (FOLD。寄せた先の字)
-//!   - package.json の web-bml の版 → npm の web-bml の jis_to_unicode_map.js (データ放送)
-//! 表はいずれ 1 つのファイルにまとまる予定なので、名前 (HIRAGANA・GAIJI など) をどのファイルからでも探す。
+//! 読む表 (build/src/denpa/):
+//!   - b24-tables.ts      字幕の文字の表 (かな・英数・半角記号・JIS の差分・追加記号・DRCS の置き換え先)
+//!   - aribtext-gaiji.ts  番組表などの ARIB 外字 (GAIJI。番組表だけで違える EPG_ONLY)
+//!   - fold.ts            検索の寄せの表 (FOLD。寄せた先の字)
+//!   - ../jis_to_unicode_map.js  web-bml のデータ放送の表
+//!   - ../index-jis0208.txt      EUC-JP の表 (字幕の漢字は EUC-JP で読んだものとの差分だけ持つので)
+//! 表はいずれ 1 つのファイルにまとまるので、表の名前 (HIRAGANA・GAIJI など) をどのファイルからでも探す。
 //!
 //! 入れるもの: データ放送 (web-bml の表と ASCII)、字幕 (JIS X 0208 の割り当てのある区点と外字の
 //! 85・86・90〜94 区、かな・英数・記号)、DRCS の置き換え先、外字の表と寄せた先の字。
 //! 抜くもの: U+EC00〜ECBB (web-bml が自前の DRCS 用フォントで描く私用領域)。
 //! データ放送の外字は私用領域 (U+E0xx〜E3xx) で来るので、同じ区点の字幕・外字の表の字へつなぐ (pua)。
 //!
-//! TS・JS は実行せず、表のリテラルだけを読む。
+//! TS・JS は実行せず、表のリテラル (文字列・数・配列、// と /* */ の注釈) だけを読む。
 
-use anyhow::{bail, Context, Result};
+use crate::err::{bail, Ctx, Result};
 use std::collections::{BTreeMap, BTreeSet};
-use sha2::Digest;
-use std::io::Read;
 use std::path::Path;
-
-/// 表を読む denpa の版
-// renovate: datasource=git-refs depName=https://github.com/danything/denpa branch=main
-pub const DENPA_COMMIT: &str = "9e8c8ef1951b451bfe1683a12cf99719efc6d242";
-const FILES: [&str; 3] = ["src/lib/ts/b24-tables.ts", "src/lib/ts/aribtext-gaiji.ts", "src/lib/fold.ts"];
 
 /// 私用領域の外字を何で描くか
 #[derive(Clone, Debug, PartialEq)]
@@ -39,66 +34,26 @@ pub struct Repertoire {
     pub pua: BTreeMap<u32, Pua>,
 }
 
-fn get(url: &str) -> Result<Option<Vec<u8>>> {
-    let mut last = None;
-    for _ in 0..5 {
-        match ureq::get(url).call() {
-            Ok(mut r) => {
-                let mut buf = vec![];
-                r.body_mut().as_reader().read_to_end(&mut buf)?;
-                return Ok(Some(buf));
-            }
-            Err(ureq::Error::StatusCode(404)) => return Ok(None),
-            Err(e) => last = Some(e),
+// ---------------------------------------------------------------- JS のリテラルの読み手
+
+#[derive(Clone, Debug, PartialEq)]
+enum Val {
+    Str(String),
+    Num(i64),
+    Arr(Vec<Val>),
+}
+
+/// 空白と注釈を飛ばす
+fn skip(mut s: &str) -> &str {
+    loop {
+        s = s.trim_start();
+        if let Some(r) = s.strip_prefix("//") {
+            s = &r[r.find('\n').unwrap_or(r.len())..];
+        } else if let Some(r) = s.strip_prefix("/*") {
+            s = &r[r.find("*/").map_or(r.len(), |i| i + 2)..];
+        } else {
+            return s;
         }
-    }
-    bail!("取れません: {url}: {}", last.unwrap())
-}
-
-/// 取ったものは build/src/denpa-<版>/ に置いて使い回す
-fn cached(dir: &Path, name: &str, url: &str) -> Result<Option<Vec<u8>>> {
-    let p = dir.join(name.replace('/', "_"));
-    let missing = dir.join(format!("{}.404", name.replace('/', "_")));
-    if let Ok(b) = std::fs::read(&p) {
-        return Ok(Some(b));
-    }
-    if missing.exists() {
-        return Ok(None);
-    }
-    std::fs::create_dir_all(dir)?;
-    match get(url)? {
-        Some(b) => {
-            let tmp = p.with_extension("part");
-            std::fs::write(&tmp, &b)?;
-            std::fs::rename(&tmp, &p)?;
-            Ok(Some(b))
-        }
-        None => {
-            std::fs::write(&missing, b"")?;
-            Ok(None)
-        }
-    }
-}
-
-/// `export const NAME = <値>` の <値> の文字列 (先頭から)。どのファイルにあってもよい
-fn value<'a>(src: &'a str, name: &str) -> Option<&'a str> {
-    let key = format!("export const {name}");
-    let i = src.find(&key)?;
-    let rest = &src[i + key.len()..];
-    let eq = rest.find('=')?;
-    Some(rest[eq + 1..].trim_start())
-}
-
-fn json_prefix(s: &str) -> Result<serde_json::Value> {
-    let mut de = serde_json::Deserializer::from_str(s).into_iter::<serde_json::Value>();
-    Ok(de.next().context("値がありません")??)
-}
-
-fn num(s: &str) -> Option<i64> {
-    let s = s.trim();
-    match s.strip_prefix("0x") {
-        Some(h) => i64::from_str_radix(h, 16).ok(),
-        None => s.parse().ok(),
     }
 }
 
@@ -118,7 +73,20 @@ fn js_string(s: &str) -> Option<(String, &str)> {
                     'n' => out.push('\n'),
                     't' => out.push('\t'),
                     'u' => {
-                        let hex: String = (0..4).filter_map(|_| it.next().map(|x| x.1)).collect();
+                        // \uXXXX か \u{X…}
+                        let mut hex = String::new();
+                        let (_, first) = it.next()?;
+                        if first == '{' {
+                            for (_, h) in it.by_ref() {
+                                if h == '}' {
+                                    break;
+                                }
+                                hex.push(h);
+                            }
+                        } else {
+                            hex.push(first);
+                            hex.extend((0..3).filter_map(|_| it.next().map(|x| x.1)));
+                        }
                         out.push(char::from_u32(u32::from_str_radix(&hex, 16).ok()?)?);
                     }
                     other => out.push(other),
@@ -131,140 +99,173 @@ fn js_string(s: &str) -> Option<(String, &str)> {
     None
 }
 
-/// `new Map<…>([ [キー, 値], … ])` の組を並べる (キー・値は数か文字列)
-fn map_pairs(v: &str) -> Result<Vec<(String, String)>> {
-    let body = &v[v.find("([").context("Map の始まりがありません")? + 2..];
-    let mut out = vec![];
-    let mut s = body;
-    loop {
-        s = s.trim_start();
-        if s.starts_with("//") {
-            s = &s[s.find('\n').unwrap_or(s.len())..];
-            continue;
-        }
-        if s.starts_with("])") || s.is_empty() {
-            break;
-        }
-        if !s.starts_with('[') {
-            bail!("Map の組が読めません: {}", &s[..s.len().min(40)]);
-        }
-        s = s[1..].trim_start();
-        let item = |s: &mut &str| -> Result<String> {
-            *s = s.trim_start();
-            if let Some((t, rest)) = js_string(s) {
-                *s = rest;
-                Ok(t)
-            } else {
-                let end = s.find([',', ']']).context("Map の値の終わりがありません")?;
-                let t = s[..end].trim().to_string();
-                *s = &s[end..];
-                Ok(t)
-            }
-        };
-        let k = item(&mut s)?;
-        s = s.trim_start().strip_prefix(',').context("Map の組に , がありません")?;
-        let val = item(&mut s)?;
-        s = s.trim_start().strip_prefix(']').context("Map の組の ] がありません")?;
-        s = s.trim_start().strip_prefix(',').unwrap_or(s);
-        out.push((k, val));
+fn num(s: &str) -> Option<i64> {
+    let s = s.trim();
+    match s.strip_prefix("0x") {
+        Some(h) => i64::from_str_radix(h, 16).ok(),
+        None => s.parse().ok(),
     }
-    Ok(out)
 }
 
-pub fn load(cache: &Path) -> Result<Repertoire> {
-    let dir = cache.join(format!("denpa-{DENPA_COMMIT}"));
-    let raw = |f: &str| format!("https://raw.githubusercontent.com/danything/denpa/{DENPA_COMMIT}/{f}");
+/// 値を 1 つ読む (文字列・数・配列)。返すのは (値, 残り)
+fn js_value(s: &str) -> Result<(Val, &str)> {
+    let s = skip(s);
+    if let Some((t, rest)) = js_string(s) {
+        return Ok((Val::Str(t), rest));
+    }
+    if let Some(mut r) = s.strip_prefix('[') {
+        let mut items = vec![];
+        loop {
+            r = skip(r);
+            if let Some(rest) = r.strip_prefix(']') {
+                return Ok((Val::Arr(items), rest));
+            }
+            let (v, rest) = js_value(r)?;
+            items.push(v);
+            r = skip(rest);
+            r = r.strip_prefix(',').unwrap_or(r);
+        }
+    }
+    let end = s.find(|c: char| !(c.is_ascii_alphanumeric() || c == '-')).unwrap_or(s.len());
+    match num(&s[..end]) {
+        Some(n) => Ok((Val::Num(n), &s[end..])),
+        None => bail!("読めない値: {}", &s[..s.len().min(40)]),
+    }
+}
+
+/// `export const NAME[: 型] = <値>` の <値> の文字列 (先頭から)
+fn raw_value<'a>(src: &'a str, name: &str) -> Option<&'a str> {
+    let key = format!("export const {name}");
+    let mut from = 0;
+    while let Some(i) = src[from..].find(&key) {
+        let rest = &src[from + i + key.len()..];
+        // 名前の続き (NAME_ROWS など) は別の名前
+        if rest.starts_with(|c: char| c.is_alphanumeric() || c == '_') {
+            from += i + key.len();
+            continue;
+        }
+        let eq = rest.find('=')?;
+        return Some(skip(&rest[eq + 1..]));
+    }
+    None
+}
+
+/// 表の値。文字列・配列のほか、`new Map<…>([…])` と `ROWS.join('')` を読む
+fn table(src: &str, name: &str) -> Result<Option<Val>> {
+    let Some(v) = raw_value(src, name) else { return Ok(None) };
+    if let Some(r) = v.strip_prefix("new Map") {
+        // `new Map<…>()` (空で作ってあとで足す) は空として読む
+        let end = r.find(';').unwrap_or(r.len());
+        return match r[..end].find("([") {
+            Some(i) => Ok(Some(js_value(&r[i + 1..])?.0)),
+            None => Ok(Some(Val::Arr(vec![]))),
+        };
+    }
+    if let Some((ident, rest)) = v.split_once(".join(") {
+        let ident = ident.trim();
+        if ident.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            let (sep, _) = js_string(skip(rest)).ctx(|| format!("{name}: join の区切りが読めません"))?;
+            let Some(Val::Arr(rows)) = table(src, ident)? else { bail!("{name}: {ident} がありません") };
+            let parts: Vec<String> = rows.into_iter().map(|r| if let Val::Str(s) = r { s } else { String::new() }).collect();
+            return Ok(Some(Val::Str(parts.join(&sep))));
+        }
+    }
+    Ok(Some(js_value(v)?.0))
+}
+
+fn need(src: &str, name: &str) -> Result<Val> {
+    table(src, name)?.ctx(|| format!("denpa の表に {name} がありません"))
+}
+
+fn as_str(v: &Val) -> Option<&str> {
+    if let Val::Str(s) = v { Some(s) } else { None }
+}
+
+/// Map の組 ([キー, 値]) を並べる
+fn pairs(v: &Val) -> Vec<(Val, Val)> {
+    let Val::Arr(items) = v else { return vec![] };
+    items
+        .iter()
+        .filter_map(|p| match p {
+            Val::Arr(kv) if kv.len() == 2 => Some((kv[0].clone(), kv[1].clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------- 一覧
+
+pub fn load(dir: &Path) -> Result<Repertoire> {
     let mut src = String::new();
-    for f in FILES {
-        if let Some(b) = cached(&dir, f, &raw(f))? {
-            src.push_str(&String::from_utf8(b)?);
+    let denpa = dir.join("denpa");
+    for f in ["b24-tables.ts", "aribtext-gaiji.ts", "fold.ts"] {
+        if let Ok(t) = std::fs::read_to_string(denpa.join(f)) {
+            src.push_str(&t);
             src.push('\n');
         }
     }
-    let pkg = cached(&dir, "package.json", &raw("package.json"))?.context("denpa の package.json がありません")?;
-    let pkg: serde_json::Value = serde_json::from_slice(&pkg)?;
-    let ver = [&pkg["dependencies"]["web-bml"], &pkg["devDependencies"]["web-bml"]]
-        .into_iter()
-        .find_map(|v| v.as_str())
-        .context("package.json に web-bml がありません")?
-        .trim_start_matches(['^', '~']);
-    let tgz = cached(&dir, &format!("web-bml-{ver}.tgz"), &format!("https://registry.npmjs.org/web-bml/-/web-bml-{ver}.tgz"))?
-        .context("web-bml がありません")?;
-    // web-bml の tgz は denpa の bun.lock の integrity (sha512) で確かめる
-    let lock = cached(&dir, "bun.lock", &raw("bun.lock"))?.context("denpa の bun.lock がありません")?;
-    let lock = String::from_utf8(lock)?;
-    let line = lock
-        .lines()
-        .find(|l| l.contains(&format!("[\"web-bml@{ver}\"")))
-        .with_context(|| format!("bun.lock に web-bml@{ver} がありません"))?;
-    let want = line
-        .rsplit("\"sha512-")
-        .next()
-        .and_then(|s| s.split('"').next())
-        .context("bun.lock の web-bml に integrity がありません")?;
-    let got = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, sha2::Sha512::digest(&tgz));
-    if got != want {
-        bail!("web-bml-{ver}.tgz の sha512 が denpa の bun.lock と違います (build/src の取ったものを消して取り直す)");
+    if src.is_empty() {
+        bail!("{} に denpa の表がありません (先に fetch.sh)", denpa.display());
     }
-    let mut jis = String::new();
-    let mut ar = tar::Archive::new(flate2::read::GzDecoder::new(&tgz[..]));
-    for e in ar.entries()? {
-        let mut e = e?;
-        if e.path()?.ends_with("dist/client/jis_to_unicode_map.js") {
-            e.read_to_string(&mut jis)?;
+    let jis = std::fs::read_to_string(dir.join("jis_to_unicode_map.js")).ctx(|| "jis_to_unicode_map.js (先に fetch.sh)".into())?;
+    let mut euc: BTreeMap<usize, u32> = BTreeMap::new();
+    for line in std::fs::read_to_string(dir.join("index-jis0208.txt")).ctx(|| "index-jis0208.txt (先に fetch.sh)".into())?.lines() {
+        let mut f = line.split('\t');
+        if let (Some(p), Some(c)) = (f.next(), f.next()) {
+            if let (Ok(p), Some(c)) = (p.trim().parse::<usize>(), num(c)) {
+                euc.entry(p).or_insert(c as u32);
+            }
         }
-    }
-    if jis.is_empty() {
-        bail!("web-bml {ver} に jis_to_unicode_map.js がありません");
     }
 
     let bad = |c: u32| c == 0xFFFD || c < 0x20;
     let mut out = BTreeSet::new();
 
     // データ放送
-    let body = jis.split("exports.jisToUnicodeMap = [").nth(1).context("jisToUnicodeMap がありません")?;
-    let body = body.split("];").next().unwrap();
+    let body = jis.split("exports.jisToUnicodeMap = [").nth(1).ctx(|| "jisToUnicodeMap がありません".into())?;
+    let Val::Arr(cells) = js_value(&format!("[{body}"))?.0 else { bail!("jisToUnicodeMap が配列でない") };
     let mut bml: BTreeMap<usize, u32> = BTreeMap::new();
-    let mut cell = 0usize;
-    for line in body.lines() {
-        for tok in line.split("//").next().unwrap().split(',') {
-            if tok.trim().is_empty() {
-                continue;
-            }
-            if tok.contains('[') || tok.contains(']') {
-                bail!("jisToUnicodeMap に配列の要素があります (読み手を直す)");
-            }
-            let v = num(tok).with_context(|| format!("jisToUnicodeMap: {tok}"))?;
-            if v >= 0 {
-                bml.insert(cell, v as u32);
-                if !bad(v as u32) {
-                    out.insert(v as u32);
+    for (i, v) in cells.iter().enumerate() {
+        match v {
+            Val::Num(n) if *n >= 0 => {
+                bml.insert(i, *n as u32);
+                if !bad(*n as u32) {
+                    out.insert(*n as u32);
                 }
             }
-            cell += 1;
+            Val::Num(_) => {}
+            _ => bail!("jisToUnicodeMap に数でない要素があります (読み手を直す)"),
         }
     }
     out.extend(0x20..0x7F);
 
     // 字幕
     for name in ["HIRAGANA", "KATAKANA", "KANA_SYMBOLS_HALF", "JISX0201", "JISX0201_HALF", "ALNUM_FULL", "ALNUM_HALF", "KANJI_SYMBOLS_HALF", "ADDITIONAL"] {
-        let v = json_prefix(value(&src, name).with_context(|| format!("denpa の表に {name} がありません"))?)?;
-        out.extend(v.as_str().with_context(|| format!("{name} が文字列でない"))?.chars().map(|c| c as u32).filter(|&c| !bad(c)));
+        let v = need(&src, name)?;
+        out.extend(as_str(&v).ctx(|| format!("{name} が文字列でない"))?.chars().map(|c| c as u32).filter(|&c| !bad(c)));
     }
+    let additional: Vec<u32> = as_str(&need(&src, "ADDITIONAL")?).unwrap_or_default().chars().map(|c| c as u32).collect();
     let mut diff: BTreeMap<usize, u32> = BTreeMap::new();
-    for pair in json_prefix(value(&src, "KANJI_DIFF").context("KANJI_DIFF がありません")?)?.as_array().context("KANJI_DIFF")? {
-        let start = pair[0].as_u64().context("KANJI_DIFF の番号")? as usize;
-        for (k, ch) in pair[1].as_str().context("KANJI_DIFF の字")?.chars().enumerate() {
-            diff.insert(start + k, ch as u32);
+    let Val::Arr(kd) = need(&src, "KANJI_DIFF")? else { bail!("KANJI_DIFF が配列でない") };
+    for p in &kd {
+        let Val::Arr(kv) = p else { bail!("KANJI_DIFF の組が読めません") };
+        let (Some(Val::Num(start)), Some(Val::Str(chars))) = (kv.first(), kv.get(1)) else { bail!("KANJI_DIFF の組が読めません") };
+        for (k, ch) in chars.chars().enumerate() {
+            diff.insert(*start as usize + k, ch as u32);
         }
     }
     let gaiji_row = |ku: usize| ku == 84 || ku == 85 || (89..=93).contains(&ku); // 0 始まり: 85・86・90〜94 区
+    // 字幕で区点 i が出す字: JIS の差分 → 追加記号 (85区から) → EUC-JP
     let caption = |i: usize| -> u32 {
-        diff.get(&i).copied().unwrap_or_else(|| {
-            let bytes = [(i / 94 + 0xA1) as u8, (i % 94 + 0xA1) as u8];
-            let (s, _, _) = encoding_rs::EUC_JP.decode(&bytes);
-            s.chars().next().map_or(0xFFFD, |c| c as u32)
-        })
+        if let Some(&c) = diff.get(&i) {
+            return c;
+        }
+        if i >= 84 * 94 {
+            if let Some(&c) = additional.get(i - 84 * 94) {
+                return c;
+            }
+        }
+        euc.get(&i).copied().unwrap_or(0xFFFD)
     };
     for i in 0..94 * 94 {
         if !bml.contains_key(&i) && !gaiji_row(i / 94) {
@@ -278,28 +279,30 @@ pub fn load(cache: &Path) -> Result<Repertoire> {
     out.insert(0x3000);
 
     // DRCS の置き換え先
-    for (_, v) in map_pairs(value(&src, "DRCS_REPLACE").context("DRCS_REPLACE がありません")?)? {
-        out.insert(num(&v).with_context(|| format!("DRCS_REPLACE: {v}"))? as u32);
+    for (_, v) in pairs(&need(&src, "DRCS_REPLACE")?) {
+        let Val::Num(n) = v else { bail!("DRCS_REPLACE の値が数でない") };
+        out.insert(n as u32);
     }
 
-    // 外字の表 (番組表など) と、検索の寄せた先
+    // 外字の表 (番組表など)。GAIJI がリテラルならそれ、計算で作るなら番組表だけの差分 (EPG_ONLY)
     let mut gaiji: BTreeMap<usize, String> = BTreeMap::new();
-    if let Some(v) = value(&src, "GAIJI") {
-        for (k, s) in map_pairs(v)? {
-            let code = num(&k).with_context(|| format!("GAIJI: {k}"))? as usize;
-            let (hi, lo) = (code >> 8, code & 0xff);
+    for name in ["GAIJI", "EPG_ONLY"] {
+        for (k, v) in table(&src, name)?.map(|v| pairs(&v)).unwrap_or_default() {
+            let (Val::Num(code), Val::Str(s)) = (k, v) else { bail!("{name} の組が読めません") };
+            let (hi, lo) = ((code >> 8) as usize, (code & 0xff) as usize);
             if !(0x21..=0x7e).contains(&hi) || !(0x21..=0x7e).contains(&lo) {
-                bail!("GAIJI のキーが区点でない: {k}");
+                bail!("{name} のキーが区点でない: {code:#x}");
             }
-            gaiji.insert((hi - 0x21) * 94 + (lo - 0x21), s.clone());
             out.extend(s.chars().map(|c| c as u32).filter(|&c| !bad(c)));
+            gaiji.insert((hi - 0x21) * 94 + (lo - 0x21), s);
         }
-    } else {
-        eprintln!("注意: denpa の表に GAIJI がありません");
     }
-    if let Some(v) = value(&src, "FOLD") {
-        for (_, s) in map_pairs(v)? {
-            out.extend(s.chars().map(|c| c as u32).filter(|&c| !bad(c)));
+    // 検索の寄せた先
+    if let Some(v) = table(&src, "FOLD")? {
+        for (_, s) in pairs(&v) {
+            if let Val::Str(s) = s {
+                out.extend(s.chars().map(|c| c as u32).filter(|&c| !bad(c)));
+            }
         }
     }
 
@@ -328,8 +331,8 @@ pub fn load(cache: &Path) -> Result<Repertoire> {
 }
 
 /// 一覧を書き出す (見るため。ビルドは load を直に使う)
-pub fn run(cache: &Path) -> Result<()> {
-    let r = load(cache)?;
+pub fn run(dir: &Path) -> Result<()> {
+    let r = load(dir)?;
     for c in &r.codepoints {
         match r.pua.get(c) {
             Some(Pua::Char(t)) => println!("U+{c:04X}  # → U+{t:04X} {}", char::from_u32(*t).unwrap_or('?')),
@@ -337,7 +340,7 @@ pub fn run(cache: &Path) -> Result<()> {
             None => println!("U+{c:04X}"),
         }
     }
-    eprintln!("{} code points (denpa {DENPA_COMMIT})", r.codepoints.len());
+    eprintln!("{} code points", r.codepoints.len());
     Ok(())
 }
 
@@ -349,34 +352,36 @@ mod tests {
     fn strings() {
         assert_eq!(js_string("'a\\'b' rest"), Some(("a'b".to_string(), " rest")));
         assert_eq!(js_string("\"\\u3042\""), Some(("あ".to_string(), "")));
+        assert_eq!(js_string("'\\u{242CE}'"), Some(("𤋎".to_string(), "")));
         assert_eq!(js_string("x"), None);
     }
 
     #[test]
-    fn numbers() {
-        assert_eq!(num(" 0x7c21"), Some(0x7c21));
-        assert_eq!(num("-1"), Some(-1));
-        assert_eq!(num("x"), None);
-    }
-
-    #[test]
-    fn maps() {
-        let src = "new Map<number, string>([\n    // 92区\n    [0x7c21, '➡'],\n    [0x7c58, '(vn)'], // 楽器\n    ['abc', 0x269e],\n]);";
-        assert_eq!(
-            map_pairs(src).unwrap(),
-            vec![
-                ("0x7c21".to_string(), "➡".to_string()),
-                ("0x7c58".to_string(), "(vn)".to_string()),
-                ("abc".to_string(), "0x269e".to_string()),
-            ]
-        );
-    }
-
-    #[test]
     fn values() {
-        let src = "export const A = \"x\\\"y\";\nexport const B: [number, string][] = [[1,\"z\"]];";
-        assert_eq!(json_prefix(value(src, "A").unwrap()).unwrap(), serde_json::json!("x\"y"));
-        assert_eq!(json_prefix(value(src, "B").unwrap()).unwrap(), serde_json::json!([[1, "z"]]));
-        assert!(value(src, "C").is_none());
+        let (v, rest) = js_value(" [ // 注釈\n [32, \"〜‖\"], // 1区33点から\n /* x */ [0x7c, '\\\\'], ];x").unwrap();
+        assert_eq!(rest, ";x");
+        assert_eq!(
+            v,
+            Val::Arr(vec![
+                Val::Arr(vec![Val::Num(32), Val::Str("〜‖".into())]),
+                Val::Arr(vec![Val::Num(0x7c), Val::Str("\\".into())]),
+            ])
+        );
+        assert_eq!(js_value("-1,").unwrap().0, Val::Num(-1));
+    }
+
+    #[test]
+    fn tables() {
+        let src = "export const ADDITIONAL_ROWS: string[] = [\n  \"ab\", // 85区\n  \"cd\",\n];\n\
+                   export const ADDITIONAL = ADDITIONAL_ROWS.join('');\n\
+                   export const M = new Map<number, string>([\n  [0x7c58, '(vn)'], // 楽器\n]);\n\
+                   export const S = \"x\\\"y\";";
+        assert_eq!(table(src, "ADDITIONAL").unwrap(), Some(Val::Str("abcd".into())));
+        assert_eq!(
+            table(src, "M").unwrap(),
+            Some(Val::Arr(vec![Val::Arr(vec![Val::Num(0x7c58), Val::Str("(vn)".into())])]))
+        );
+        assert_eq!(table(src, "S").unwrap(), Some(Val::Str("x\"y".into())));
+        assert_eq!(table(src, "NONE").unwrap(), None);
     }
 }

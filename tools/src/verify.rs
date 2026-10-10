@@ -8,10 +8,10 @@
 //!    (自動ヒンティングはフォント全体の字から高さの帯を測るので、字を絞ると ²³ などが動く。ここでは比べない)
 //! 4. 前の版と比べて描き方が変わった字: 3 に自動ヒンティング (FreeType の light 相当) も足して比べ、
 //!    expected-changes.txt に書いた字だけ許す (`*` は全部)
-//! 5. woff2 を解いて ttf と同じ字になること
+//! 5. woff2 を解いたもの (CI が woff2_decompress で解く) が ttf と同じ字になること
 
 use crate::read_codepoints;
-use anyhow::Result;
+use crate::err::Result;
 use skrifa::instance::{LocationRef, Size};
 use skrifa::outline::{DrawSettings, Engine, HintingInstance, HintingOptions, OutlinePen, SmoothMode};
 use skrifa::raw::TableProvider;
@@ -89,7 +89,7 @@ fn drawings(data: &[u8], cps: &[u32], modes: &[Mode]) -> Result<BTreeMap<u32, Ve
     }
     for &c in cps {
         let Some(gid) = charmap.map(c) else { continue };
-        let glyph = outlines.get(gid).ok_or_else(|| anyhow::anyhow!("glyph {gid} がありません"))?;
+        let glyph = outlines.get(gid).ok_or_else(|| format!("glyph {gid} がありません"))?;
         let mut v = vec![vec![metrics.advance_width(gid).unwrap_or(0.0) as i64]];
         for (ppem, inst) in &insts {
             let mut pen = Rec::default();
@@ -111,7 +111,7 @@ fn differing(a: &[u8], b: &[u8], cps: &[u32], modes: &[Mode]) -> Result<BTreeSet
     Ok(cps.iter().copied().filter(|c| da.get(c) != db.get(c)).collect())
 }
 
-pub fn run(font_path: &Path, merged_path: &Path, prev_path: Option<&Path>) -> Result<()> {
+pub fn run(font_path: &Path, merged_path: &Path, prev_path: Option<&Path>, woff2_ttf: Option<&Path>) -> Result<()> {
     let data = std::fs::read(font_path)?;
     let merged = std::fs::read(merged_path)?;
     let font = FontRef::new(&data)?;
@@ -207,11 +207,9 @@ pub fn run(font_path: &Path, merged_path: &Path, prev_path: Option<&Path>) -> Re
         println!("前の版: なし (比べない)");
     }
 
-    // 5. woff2
-    let woff2_path = font_path.with_extension("woff2");
-    if woff2_path.exists() {
-        let w = std::fs::read(&woff2_path)?;
-        let back = wuff::decompress_woff2(&w).map_err(|e| anyhow::anyhow!("woff2 を解けません: {e:?}"))?;
+    // 5. woff2 (解くのは道具の外。CI が woff2_decompress で解いたものを渡す)
+    if let Some(p) = woff2_ttf {
+        let back = std::fs::read(p)?;
         let d = differing(&data, &back, &cps, &[Mode::Unhinted, Mode::Interpreter])?;
         if !d.is_empty() {
             errors.push(format!("woff2 を解くと違う字 {}: {}", d.len(), label(&d)));

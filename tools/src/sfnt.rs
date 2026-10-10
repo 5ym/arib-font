@@ -1,7 +1,7 @@
 //! TrueType (glyf) の字を読み書きする小さな道具。表の組み立ては write-fonts、
 //! 字の点の読み書きはここ (元の字のバイト列はそのまま運び、足す字だけ作る)。
 
-use anyhow::{bail, Context, Result};
+use crate::err::{bail, Ctx, Result};
 use write_fonts::read::{FontRef, TableProvider};
 use write_fonts::types::Tag;
 
@@ -16,7 +16,7 @@ pub type Contour = Vec<Pt>;
 pub fn table<'a>(font: &FontRef<'a>, tag: &[u8; 4]) -> Result<&'a [u8]> {
     Ok(font
         .table_data(Tag::new(tag))
-        .with_context(|| format!("{} 表がありません", String::from_utf8_lossy(tag)))?
+        .ctx(|| format!("{} 表がありません", String::from_utf8_lossy(tag)))?
         .as_bytes())
 }
 

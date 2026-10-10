@@ -5,7 +5,7 @@
 //! (非ゼロ規則)、白抜きは塗りの内側にだけ置く。
 
 use crate::sfnt::{Contour, Glyphs, Pt};
-use anyhow::{Context, Result};
+use crate::err::{Ctx, Result};
 use std::collections::BTreeMap;
 use std::f64::consts::PI;
 
@@ -220,7 +220,7 @@ struct Base<'a> {
 impl Base<'_> {
     /// 源柔の字の輪郭
     fn glyph(&self, ch: char) -> Result<Shape> {
-        let gid = *self.cmap.get(&(ch as u32)).with_context(|| format!("源柔に {ch} がありません"))?;
+        let gid = *self.cmap.get(&(ch as u32)).ctx(|| format!("源柔に {ch} がありません"))?;
         self.glyphs.outline(gid as usize)
     }
     /// 源柔の字の、x が split より左 (left) か右の輪郭だけ
@@ -234,6 +234,32 @@ impl Base<'_> {
             })
             .collect())
     }
+    /// 源柔の字の、y が split より上 (upper) か下の輪郭だけ
+    fn half_y(&self, ch: char, split: f64, upper: bool) -> Result<Shape> {
+        Ok(self
+            .glyph(ch)?
+            .into_iter()
+            .filter(|c| {
+                let ys = c.iter().map(|q| q.y);
+                if upper { ys.fold(f64::MAX, f64::min) >= split } else { ys.fold(f64::MIN, f64::max) <= split }
+            })
+            .collect())
+    }
+}
+
+/// 冠 (源柔の字 top の y が split より上の輪郭) と脚 (bottom の y が split より下の輪郭) を、
+/// 上下に mid で分けて縦に縮めて組む
+fn kanji_tb(b: &Base, (top, ts): (char, f64), (bottom, bs): (char, f64), mid: f64) -> Result<Shape> {
+    let gap = 50.0;
+    let t = b.half_y(top, ts, true)?;
+    let u = b.half_y(bottom, bs, false)?;
+    let (_, ty0, _, ty1) = bbox(&t);
+    let (_, uy0, _, uy1) = bbox(&u);
+    let kt = (ty1 - (mid + gap / 2.0)) / (ty1 - ty0);
+    let ku = ((mid - gap / 2.0) - uy0) / (uy1 - uy0);
+    let mut out = place(t, 0.0, ty1, 1.0, kt, 0.0, ty1);
+    out.extend(place(u, 0.0, uy0, 1.0, ku, 0.0, uy0));
+    Ok(out)
 }
 
 // ---------------------------------------------------------------- 字ごと
@@ -638,6 +664,7 @@ pub fn draw(c: u32, glyphs: &Glyphs, cmap: &Cmap) -> Result<Option<Shape>> {
         0x55BC => s = kanji(&b, ('吡', 335.0), Right::Scale('急'))?, // 喼 ⿰口急
         0x40EF => s = kanji(&b, ('硎', 360.0), Right::Scale('楽'))?, // 䃯 ⿰石楽
         0x9FC5 => s = kanji(&b, ('祾', 380.0), Right::From('澪', 280.0))?, // 鿅 ⿰礻零
+        0x242CE => s = kanji_tb(&b, ('煎', 140.0), ('炎', 460.0), 330.0)?, // 𤋎 ⿱前火 (煎 の 前・炎 の下の 火)
         _ => return Ok(None),
     }
     Ok(Some(s))
@@ -720,7 +747,7 @@ fn cloud(b: &Base) -> Result<Shape> {
             let (c0, _, c1, _) = bbox(&vec![c.clone()]);
             (a1 - a0).partial_cmp(&(c1 - c0)).unwrap()
         })
-        .context("☁ に輪郭がありません")?;
+        .ctx(|| "☁ に輪郭がありません".into())?;
     Ok(vec![big])
 }
 

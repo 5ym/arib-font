@@ -35,19 +35,19 @@
 
 ## 収めた字の範囲
 
-**denpa の表だけを元にします。** 道具が [danything/denpa](https://github.com/danything/denpa) の表を版 (コミット) を固定して直接読みます
-(`tools/src/repertoire.rs` の `DENPA_COMMIT`。Renovate が追う)。フォント側に表の写しは持ちません。
+**denpa の表だけを元にします。** [fetch.sh](fetch.sh) が [danything/denpa](https://github.com/danything/denpa) の表を版 (コミット) を固定して取り
+(`DENPA_COMMIT`。Renovate が追う)、道具がそれを読みます。フォント側に表の写しは持ちません。
 
 | 何のための字 | denpa の表 |
 | --- | --- |
-| 字幕 | `src/lib/ts/b24-tables.ts` (JIS X 0208 の割り当てのある区点、外字 85・86・90〜94 区、かな・英数・記号) |
+| 字幕 | `src/lib/ts/b24-tables.ts` (JIS X 0208 の割り当てのある区点、外字 85・86・90〜94 区、かな・英数・記号。漢字は EUC-JP との差分なので、EUC-JP は WHATWG の index-jis0208 で読む) |
 | DRCS (局が絵で送る字) | 同じく `DRCS_REPLACE` の置き換え先 |
-| 番組表などの外字 | `src/lib/ts/aribtext-gaiji.ts` (`GAIJI`) と、検索の寄せた先 (`src/lib/fold.ts` の `FOLD`) |
-| データ放送 | `package.json` の web-bml の版の `jis_to_unicode_map.js` と ASCII |
+| 番組表などの外字 | `src/lib/ts/aribtext-gaiji.ts` (`EPG_ONLY`。ほかは字幕の追加記号と同じ) と、検索の寄せた先 (`src/lib/fold.ts` の `FOLD`) |
+| データ放送 | `package.json` の web-bml の版の `jis_to_unicode_map.js` (npm から取り、denpa の `bun.lock` の sha512 で確かめる) と ASCII |
 
 - 表はいずれ 1 つのファイルにまとまる予定なので、表の名前 (`HIRAGANA`・`GAIJI` など) をどのファイルからでも探します
 - U+EC00〜ECBB は除きます (web-bml が自前で描く)
-- 7,754 字。全部入っています ([missing.txt](missing.txt) は空)。ttf 4.2MB・woff2 1.5MB
+- 7,755 字。全部入っています ([missing.txt](missing.txt) は空)。ttf 4.2MB・woff2 1.5MB
 - 絞っても字は変わりません (`verify` が絞る前と全字を比べる)。ヒンティングは残し、縦書きと OpenType の組版 (vhea/vmtx/GSUB/GPOS) は落としています
 - 行の高さは v1.x と同じ (WinAscent 981 / WinDescent 168)
 - カラー絵文字が既定の字 (🅿 ♨ ☎ ⚡ ⛅ ❗ ⁉ など) も白黒の形で入っています (`verify` が空白のほかに形の無い字が無いことを確かめる)
@@ -62,14 +62,14 @@ denpa のフォントの版 (と sha256) を上げる。
 | --- | --- | --- |
 | 源柔ゴシック等幅 Regular | 1.002.20150607 | <http://jikasei.me/font/genjyuu/> |
 
-配布元・版・sha256 は `tools/src/sources.rs` に固定してあります。元にある字 (7,514 字) はそのまま運び、無い字は次のように作ります
+配布元・版・sha256 は [fetch.sh](fetch.sh) に固定してあります。元にある字 (7,514 字) はそのまま運び、無い字は次のように作ります
 (作り方の一覧はビルドのたびに `build/extras.txt` に出る)。描き方の数値 (線の太さ・縮め率など) は `tools/src/draw.rs` の頭にまとめてあります。
 
 | 作り方 | 字 | 数 |
 | --- | --- | --- |
 | 同じ字形を指す | データ放送の外字の私用領域 (U+E0xx〜E3xx)。denpa の表で同じ区点の字 (92区26〜31 は 氏 副 元 故 前 新) | 125 |
 | 元の字を縮めて並べる | 92区56〜85 の楽器の略記 ((vn) (ob) … (pe r))。元の半角の字を横 50%・縦 80% にして 1 マスに並べる | 30 |
-| 描く | 下の 85 字 | 85 |
+| 描く | 下の 86 字 | 86 |
 
 描いた字と描き方:
 
@@ -83,6 +83,7 @@ denpa のフォントの版 (と sha256) を上げる。
 | ⛌ ⛍ ⛐ ⛒ ⛓ ⛔ ⛕ ⛖ ⛗ ⛘ ⛙ ⛚ ⛛ ⛜ ⛟ ⛠ ⛡ ⛣ | 道路・交通の記号を、線 44・太い線 92・角の丸み 36 の単純な図形で |
 | ⛨ ⛩ ⛪ ⛫ ⛬ ⛭ ⛮ ⛯ ⛰ ⛱ ⛲ ⛳ ⛴ ⛵ ⛷ ⛸ ⛹ ⛺ ⛻ ⛼ ⛽ ⛾ ⛿ ✈ ⚓ ⚞ ⚟ ⛏ ⛑ | 地図・施設の記号を、同じ数値の単純な図形で |
 | 喼 䃯 鿅 | 源柔の字の偏 (吡 の 口・硎 の 石・祾 の 礻) と旁 (急・楽・澪 の 零) を横に縮めて組む |
+| 𤋎 | 源柔の 煎 の 前 と 炎 の下の 火 を縦に縮めて組む |
 
 ![描いた字 1](docs/drawn-d.png)
 ![描いた字 2](docs/drawn-e.png)
@@ -99,15 +100,19 @@ denpa のフォントの版 (と sha256) を上げる。
 
 ## ビルドとリリースの仕方
 
-道具は Rust の 1 本 ([tools/](tools)。fontations の read-fonts・write-fonts・skrifa、絞り込みは skera、woff2 は ttf2woff2)。
+取ってくる・確かめる・ほどくのは [fetch.sh](fetch.sh) (curl・sha256sum・openssl・7z・tar)、フォントを作るのは Rust の道具 1 本
+([tools/](tools)。依存は fontations の skrifa・write-fonts・skera と woff2 の ttf2woff2 だけ。道具はネットに触らない)。
 Rust の版は [rust-toolchain.toml](rust-toolchain.toml)、依存は `tools/Cargo.lock` で固定してあります。同じ入力から同じバイト列ができます。
 
 ```sh
+sh fetch.sh                                   # build/src に取ってくる
 cargo build --release --locked --manifest-path tools/Cargo.toml
-tools/target/release/denpa-font build 2.1     # 元を取って作る → dist/
-tools/target/release/denpa-font verify dist/denpa-font.ttf build/merged.ttf [前の版の denpa-font.ttf]
+tools/target/release/denpa-font build 2.1     # → dist/denpa-font.ttf・.woff2
+tools/target/release/denpa-font verify dist/denpa-font.ttf build/merged.ttf [--prev 前の版の ttf] [--woff2 woff2 を解いた ttf]
 tools/target/release/denpa-font repertoire    # 収める字の一覧を見る
 ```
+
+SHA256SUMS は CI のシェルが作ります。woff2 は CI が Google の `woff2_decompress` で解いて ttf と比べます。
 
 `verify` が確かめること (PR・main・タグのたびに CI が動かす):
 
@@ -115,7 +120,7 @@ tools/target/release/denpa-font repertoire    # 収める字の一覧を見る
 - 名前・em
 - 絞る前後で字が同じ (ヒンティング無し・フォント自身のヒンティングで描いた輪郭と送り幅)
 - 前の版から描き方が変わった字は [expected-changes.txt](expected-changes.txt) にあるものだけ (`*` は全部)。字を変える PR では同じ PR で書き、リリースのあと空に戻す
-- woff2 を解いて ttf と同じ字になる
+- woff2 を解いたものが ttf と同じ字になる
 
 **版**: タグは `vX.Y` (例 `v2.1`)。元を替える・字を減らす・字の幅や行の高さを変えるときは X、字を足す・直すときは Y を上げます。フォントの版 (nameID 5) は `Version X.YYY`。タグを push すると GitHub Actions が作って確かめ、Releases に ttf・woff2・SHA256SUMS を置きます。
 
