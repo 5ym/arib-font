@@ -1,10 +1,20 @@
 #!/usr/bin/fontforge
+# 自家製 Rounded M+ 1m に和田研中丸ゴシックの字を足す (build.sh から呼ぶ)。
+#   fontforge -lang=ff -script denpa-font.pe <元フォントの置き場> <出力 ttf>
+# 名前・日付・字の絞り込みはあとの scripts/finish.py がする。
 
-MPLUS = $0:h + "/rounded-mplus-1m-regular.ttf"
-WLCMARU = $0:h + "/wlcmaru2004aribu.ttf"
-GENNAME = "rounded-mplus-1m-arib"
+SRC = $1
+OUT = $2
+MPLUS = SRC + "/rounded-mplus-1m-regular.ttf"
+WLCMARU = SRC + "/wlcmaru2004aribu.ttf"
+WLCEMOJI = SRC + "/wlcmaru2004emoji.ttf"
+COPYLIST = $0:h + "/denpa-font-copylist.txt"
 
+# 和田丸ゴは M+ よりベースラインが高いので下げる
 Open(WLCMARU)
+SelectWorthOutputting()
+Move(0, -120)
+Open(WLCEMOJI)
 SelectWorthOutputting()
 Move(0, -120)
 
@@ -16,7 +26,7 @@ SelectSingletons(0x0067, 0xFF47, 0x006A, 0xFF4A, 0x0070, 0xFF50, 0x0071, 0xFF51,
 Scale(100, 90)
 Move(0, 45)
 
-copylist = LoadStringFromFile($0:h + "/" + GENNAME + "-copylist.txt")
+copylist = LoadStringFromFile(COPYLIST)
 len = Strlen(copylist)
 i = 0
 ignore = 0
@@ -70,21 +80,26 @@ while (i < len)
       else
         uu = u
       endif
+    elseif (section == 3 && u != 0x3000 && !WorthOutputting(u))
+      Open(WLCEMOJI)
+      SelectSingletons(u)
+      Copy()
+      Open(MPLUS)
+      SelectSingletons(u)
+      Paste()
     endif
   endif
 endloop
 
-SetFontNames(GENNAME, "Rounded M+ 1m for ARIB", "Rounded M+ 1m for ARIB",\
-             "", "Rounded M+, WadaLabMaruGo2004ARIB(RareEarth) mixed.", "1.3")
-SetTTFName(0x409, 3, "FontForge : Rounded M+ 1m for ARIB : 16-12-2012") # Copyright notice
-SetTTFName(0x409, 5, "") # Version string
-SetTTFName(0x409, 11, "") # URL Vendor
-SetTTFName(0x409, 16, "") # Preferred Family
-SetTTFName(0x409, 17, "") # Preferred Subfamily
-SetOS2Value("WinAscent", -120)
-SetOS2Value("WinDescent", -160)
-SetOS2Value("HHeadAscent", -120)
-SetOS2Value("HHeadDescent", 160)
+# 行の高さ (元の Rounded M+ 1m for ARIB と同じ値。上下のダイアクリティカルマークは切れることがある)
+SetOS2Value("WinAscentIsOffset", 0)
+SetOS2Value("WinDescentIsOffset", 0)
+SetOS2Value("HHeadAscentIsOffset", 0)
+SetOS2Value("HHeadDescentIsOffset", 0)
+SetOS2Value("WinAscent", 981)
+SetOS2Value("WinDescent", 168)
+SetOS2Value("HHeadAscent", 981)
+SetOS2Value("HHeadDescent", -168)
 SetOS2Value("TypoLineGap", 0)
 SetOS2Value("HHeadLineGap", 0)
-Generate($0:h + "/" + GENNAME + ".ttf", "", 4)
+Generate(OUT, "", 4)
