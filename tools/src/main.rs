@@ -234,7 +234,6 @@ fn build(version: &str) -> Result<()> {
         writeln!(report, "# missing U+{c:04X} {}", ch(c))?;
     }
     fs::create_dir_all("build")?;
-    fs::write("build/extras.txt", &report)?;
     let rep: Vec<u32> = repertoire.codepoints.iter().copied().collect();
     fs::write("build/repertoire.txt", rep.iter().map(|c| format!("U+{c:04X}\n")).collect::<String>())?;
 
@@ -246,7 +245,8 @@ fn build(version: &str) -> Result<()> {
         .unwrap_or_else(|| std::thread::available_parallelism().map_or(4, |n| n.get()))
         .max(1);
     let next = std::sync::atomic::AtomicUsize::new(0);
-    let results: Vec<std::sync::Mutex<Option<std::result::Result<Vec<u8>, String>>>> = (0..jobs.len()).map(|_| std::sync::Mutex::new(None)).collect();
+    type Made = std::result::Result<(Vec<u8>, bool), String>;
+    let results: Vec<std::sync::Mutex<Option<Made>>> = (0..jobs.len()).map(|_| std::sync::Mutex::new(None)).collect();
     std::thread::scope(|sc| {
         for _ in 0..threads {
             sc.spawn(|| {
@@ -262,10 +262,21 @@ fn build(version: &str) -> Result<()> {
         }
     });
     let mut data_out = vec![];
+    let mut rastered = BTreeSet::new();
     for (i, r) in results.into_iter().enumerate() {
         let r = r.into_inner().unwrap().ctx(|| format!("字 {i} が作られていません"))?;
-        data_out.push(r.map_err(|e| format!("字 {i}: {e}"))?);
+        let (d, fallback) = r.map_err(|e| format!("字 {i}: {e}"))?;
+        if fallback {
+            rastered.insert(i as u32);
+        }
+        data_out.push(d);
     }
+    for (&c, g) in &cmap {
+        if rastered.contains(g) {
+            writeln!(report, "raster  U+{c:04X}  # {} (輪郭のまま丸めると輪郭が交わるので格子で丸めた)", ch(c))?;
+        }
+    }
+    fs::write("build/extras.txt", &report)?;
     let lsb = data_out.iter().map(|d| if d.is_empty() { 0 } else { sfnt::i16_at(d, 2) }).collect();
     let glyphs = Glyphs { data: data_out, advance: jobs.iter().map(|j| j.1).collect(), lsb };
     eprintln!("{} 字を {:.1} 秒で作った ({threads} スレッド)", glyphs.len(), t0.elapsed().as_secs_f64());

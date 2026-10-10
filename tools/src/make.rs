@@ -50,24 +50,31 @@ fn union(a: Option<(f64, f64, f64, f64)>, b: (f64, f64, f64, f64)) -> (f64, f64,
     }
 }
 
-/// 字を作って glyf の 1 字分のバイト列にする
-pub fn make(job: &Job, base: &Base) -> Result<Vec<u8>> {
+/// 字を作って glyf の 1 字分のバイト列にする。2 つめは、元の字を輪郭のまま丸めると輪郭が交わるので
+/// 格子で丸めたとき true
+pub fn make(job: &Job, base: &Base) -> Result<(Vec<u8>, bool)> {
     let contours = match job {
-        Job::Keep(s) => return Ok(sfnt::encode_simple(s)),
-        Job::Fillet(s) => fillet::round_shape(s),
-        Job::Raster(s) => {
-            let polys = round::flatten(s, FLAT_TOL);
-            let Some(b) = bbox(&polys) else { return Ok(vec![]) };
-            let g = Grid::covering(b, round::R1 + 4.0);
-            let mask = g.fill(&polys);
-            trace(&g, &mask, false)
-        }
+        Job::Keep(s) => return Ok((sfnt::encode_simple(s), false)),
+        Job::Fillet(s) => match fillet::round_shape(s) {
+            Some(c) => c,
+            None => return Ok((sfnt::encode_simple(&raster(s)), true)),
+        },
+        Job::Raster(s) => raster(s),
         Job::Parts(parts, sharp) => {
             let (g, mask) = compose(parts, base)?;
             trace(&g, &mask, *sharp)
         }
     };
-    Ok(sfnt::encode_simple(&contours))
+    Ok((sfnt::encode_simple(&contours), false))
+}
+
+/// 輪郭を格子に塗って丸める
+fn raster(s: &Shape) -> Shape {
+    let polys = round::flatten(s, FLAT_TOL);
+    let Some(b) = bbox(&polys) else { return vec![] };
+    let g = Grid::covering(b, round::R1 + 4.0);
+    let mask = g.fill(&polys);
+    trace(&g, &mask, false)
 }
 
 /// 塗った字を丸めて輪郭にする

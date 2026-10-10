@@ -256,6 +256,7 @@ pub fn round_contour(c: &Contour) -> Contour {
     let start = (0..n).find(|&r| !merged[r] && !merged[(r + n - 1) % n]);
     let (start, merged) = match start {
         Some(r) => (r, merged),
+        // 全部の辺がまとめる辺 (小さな点など): まとめずに角ごとの円弧にする (それでも丸くなる)
         None => (0, vec![false; n]),
     };
     // 区間を縮めて、角に円弧を入れる
@@ -310,9 +311,56 @@ pub fn round_contour(c: &Contour) -> Contour {
     fit::tidy(dedup)
 }
 
-/// 字の全部の輪郭の角を丸める
-pub fn round_shape(s: &[Contour]) -> Vec<Contour> {
-    s.iter().map(round_contour).collect()
+/// 字の全部の輪郭の角を丸める。丸めた輪郭が交わったら (元の輪郭が重なっていたなど) None
+pub fn round_shape(s: &[Contour]) -> Option<Vec<Contour>> {
+    let out: Vec<Contour> = s.iter().map(round_contour).collect();
+    if crosses(&out) { None } else { Some(out) }
+}
+
+/// 輪郭 (折れ線にしたもの) のどこかが交わるか。同じ輪郭の隣り合う辺は数えない
+fn crosses(shape: &[Contour]) -> bool {
+    let polys = crate::round::flatten(shape, 0.5);
+    // (輪郭, 辺の番号, 始め, 終わり)
+    let mut segs: Vec<(usize, usize, V, V)> = vec![];
+    for (ci, p) in polys.iter().enumerate() {
+        for k in 0..p.len() {
+            segs.push((ci, k, p[k], p[(k + 1) % p.len()]));
+        }
+    }
+    // 升目に分けて近い辺どうしだけ比べる
+    const CELL: f64 = 32.0;
+    let mut grid: std::collections::HashMap<(i32, i32), Vec<usize>> = std::collections::HashMap::new();
+    for (i, &(_, _, a, b)) in segs.iter().enumerate() {
+        let (x0, x1) = ((a.0.min(b.0) / CELL).floor() as i32, (a.0.max(b.0) / CELL).floor() as i32);
+        let (y0, y1) = ((a.1.min(b.1) / CELL).floor() as i32, (a.1.max(b.1) / CELL).floor() as i32);
+        for gx in x0..=x1 {
+            for gy in y0..=y1 {
+                grid.entry((gx, gy)).or_default().push(i);
+            }
+        }
+    }
+    let side = |a: V, b: V, p: V| cross(sub(b, a), sub(p, a));
+    for cell in grid.values() {
+        for (x, &i) in cell.iter().enumerate() {
+            for &j in &cell[x + 1..] {
+                let (ci, ki, a, b) = segs[i];
+                let (cj, kj, c, d) = segs[j];
+                if ci == cj {
+                    let n = polys[ci].len();
+                    if ki.abs_diff(kj) <= 1 || ki.abs_diff(kj) == n - 1 {
+                        continue;
+                    }
+                }
+                // 端を含まない交わり (触れるだけは数えない)
+                let (s1, s2) = (side(a, b, c), side(a, b, d));
+                let (s3, s4) = (side(c, d, a), side(c, d, b));
+                if s1 * s2 < -1e-9 && s3 * s4 < -1e-9 {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 #[cfg(test)]
@@ -341,6 +389,38 @@ mod tests {
         let poly = &crate::round::flatten(std::slice::from_ref(&c), 0.01)[0];
         let tip = poly.iter().copied().fold((f64::MAX, 0.0), |a, p| if p.0 < a.0 { p } else { a });
         assert!(tip.0.abs() < 0.05 && (tip.1 - 30.0).abs() < 1.0, "{tip:?}");
+    }
+
+    #[test]
+    fn small_dot_is_round() {
+        // 50 四方の点: 全部の辺を角が使い切るので、まとめずに角ごとの円弧 (それでも丸)
+        let c = round_contour(&rect(0.0, 0.0, 50.0, 50.0));
+        let poly = &crate::round::flatten(std::slice::from_ref(&c), 0.01)[0];
+        for &(x, y) in poly {
+            let r = (x - 25.0).hypot(y - 25.0);
+            assert!((r - 25.0).abs() < 1.0, "({x}, {y}) r {r}");
+        }
+    }
+
+    #[test]
+    fn corner_next_to_curve() {
+        // 下の辺が2次曲線の山 (時計回り: 左の辺を上へ、上の辺、右の辺を下へ、下の曲線を左へ)
+        let p = |x: f64, y: f64, on: bool| Pt { x, y, on };
+        let c = vec![p(0.0, 0.0, true), p(0.0, 300.0, true), p(400.0, 300.0, true), p(400.0, 0.0, true), p(200.0, -100.0, false)];
+        let r = round_contour(&c);
+        assert!(!crosses(std::slice::from_ref(&r)));
+        // 曲線と左の辺の角も丸まり、左下の角の点 (0, 0) は残らない
+        assert!(!r.iter().any(|q| q.on && q.x.abs() < 1e-6 && q.y.abs() < 1e-6), "{r:?}");
+        let poly = &crate::round::flatten(std::slice::from_ref(&r), 0.01)[0];
+        assert!(poly.iter().all(|&(x, y)| x >= -0.01 && y >= -60.0));
+    }
+
+    #[test]
+    fn crossing_is_found() {
+        let a = rect(0.0, 0.0, 100.0, 100.0);
+        let b = rect(50.0, 50.0, 150.0, 150.0);
+        assert!(crosses(&[a.clone(), b]));
+        assert!(!crosses(&[a]));
     }
 
     #[test]
