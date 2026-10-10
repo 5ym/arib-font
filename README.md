@@ -35,17 +35,19 @@ v1.x は「Rounded M+ 1m for ARIB」(自家製 Rounded M+ 1m + 和田研中丸�
 
 ## 収めた字の範囲
 
-[repertoire.txt](repertoire.txt) の 7,752 字に絞っています (ttf 4.2MB・woff2 1.5MB)。入っているのは 7,750 字です。
+[repertoire.txt](repertoire.txt) の 7,754 字に絞っています (ttf 4.2MB・woff2 1.5MB)。入っているのは 7,752 字です。
 
 | 何のための字 | 出どころ |
 | --- | --- |
 | データ放送 | web-bml の JIS→Unicode 表と ASCII |
 | 字幕 | JIS X 0208 の割り当てのある区点、外字 (85・86・90〜94 区)、かな・英数・半角記号 (denpa の `src/lib/ts/b24-tables.ts`) |
 | DRCS (局が絵で送る字) | denpa が置き換える先の字 |
+| 番組表の外字 | 規格どおりの字で出すときの字 (⌺ ⦿。`scripts/repertoire.ts` に書いてある) |
 
 - U+EC00〜ECBB は除く (web-bml が自前で描く)
 - 絞っても描き方は変わりません (`scripts/verify.py` が絞る前と全字を比べる)。ヒンティングは残し、縦書きと OpenType の組版 (vhea/vmtx/GSUB/GPOS) は落としています
 - 行の高さは v1.x と同じ (WinAscent 981 / WinDescent 168)
+- カラー絵文字が既定の字 (🅿 ♨ ☎ ⚡ ⛅ ❗ ⁉ など) も白黒の形で入っています (`verify.py` が空白のほかに形の無い字が無いことを確かめる)
 - どの元にも無い字は [missing.txt](missing.txt) にあります (DRCS の置き換え先の漢字 2 字: 䃯 喼)。端末の字で出ます
 
 一覧は denpa のチェックアウトで作り直せます。
@@ -67,6 +69,7 @@ bun ../denpa-font/scripts/repertoire.ts > ../denpa-font/repertoire.txt
 | 作り方 | 字 | 数 |
 | --- | --- | --- |
 | 同じ字形を指す (alias) | ARIB の外字の私用領域 (U+E0xx〜E3xx)。ARIBMAP.csv が示す Unicode 5.2 の字と同じグリフ。Unicode に無い 92区26〜31 は 氏 副 元 故 前 新 | 125 |
+| 元の字から描く (draw) | ⌺ (番組表の外字): 元の □ に同じ線の太さのひし形を描く | 1 |
 | 元の字を縮めて並べる (compose) | 92区56〜85 の楽器の略記 ((vn) (ob) … (pe r))。元の半角の字を横 50%・縦 80% にして 1 マスに並べる | 30 |
 | 和田研から写す (copy) | 下の表 | 82 |
 
@@ -81,7 +84,7 @@ bun ../denpa-font/scripts/repertoire.ts > ../denpa-font/repertoire.txt
 
 ## 候補の比較 (v2.0 で元を選んだとき)
 
-repertoire.txt (7,752 字) に対して、私用領域は ARIBMAP.csv で Unicode の字に読み替えて数えました。
+repertoire.txt (v2.0 の 7,752 字) に対して、私用領域は ARIBMAP.csv で Unicode の字に読み替えて数えました。
 
 | 候補 | 1 つで入る字 | 補う字 | 見た目の揃い方 |
 | --- | --- | --- | --- |

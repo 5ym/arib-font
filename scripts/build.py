@@ -80,6 +80,24 @@ def compose(text, pen):
         x += 512 * sx
 
 
+def quad_diamond(pen):
+    """⌺ (U+233A): 元の □ に、□ と同じ線の太さのひし形を内に描く (頂点は □ の線の真ん中)"""
+    rec = DecomposingRecordingPen(gs)
+    gs[cmap[0x25A1]].draw(rec)
+    rec.replay(pen)
+    box = glyf[cmap[0x25A1]]
+    w = 38  # □ の線の太さ (外 102〜922、内 140〜884)
+    cx, cy = (box.xMin + box.xMax) / 2, (box.yMin + box.yMax) / 2
+    for r, sign in (((box.xMax - box.xMin) / 2 - w / 2, 1), ((box.xMax - box.xMin) / 2 - w / 2 - w * 2**0.5, -1)):
+        pts = [(cx, cy + r), (cx + sign * r, cy), (cx, cy - r), (cx - sign * r, cy)]  # 外は時計回り、内は逆
+        pen.moveTo(tuple(map(round, pts[0])))
+        for q in pts[1:]:
+            pen.lineTo(tuple(map(round, q)))
+        pen.closePath()
+
+
+DRAW = {'quaddiamond': quad_diamond}
+
 added = {}
 with open(os.path.join(here, 'extras.txt'), encoding='utf-8') as f:
     rows = [l.split('#')[0].split() for l in f if l.split('#')[0].strip()]
@@ -94,6 +112,10 @@ for kind, cp, *rest in rows:
     c = int(cp[2:], 16)
     if kind == 'alias':
         added[c] = cmap.get(int(rest[0][2:], 16)) or added[int(rest[0][2:], 16)]
+    elif kind == 'draw':
+        name = f'draw{c:04X}'
+        add_glyph(name, DRAW[rest[0]], 1024)
+        added[c] = name
     elif kind == 'compose':
         name = f'arib{c:04X}'
         add_glyph(name, lambda pen, t=rest[0]: compose(t, pen), 1024)

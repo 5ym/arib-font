@@ -5,6 +5,7 @@
 //   - 字幕 (denpa の src/lib/ts/b24-tables.ts。かな・英数・半角記号・追加記号と、
 //     JIS X 0208 の割り当てのある区点と外字の 85・86・90〜94 区)
 //   - denpa が DRCS (局が絵で送る字) を置き換える先の字 (DRCS_REPLACE)
+//   - 番組表の外字 (下の一覧)
 // 抜くもの: U+EC00〜ECBB (web-bml が自前の DRCS 用フォントで描く私用領域)
 import { resolve } from 'node:path';
 
@@ -49,6 +50,9 @@ out.add(0x3000);
 
 // DRCS の置き換え先
 for (const c of (B.DRCS_REPLACE as Map<string, number>).values()) out.add(c);
+
+// 番組表 (EIT) の外字を規格どおりの字で出すときの字 (denpa の表に入るまでここに書く)
+for (const c of [0x233a, 0x29bf]) out.add(c); // ⌺ ⦿
 
 const list = [...out].filter((c) => c < 0xec00 || c > 0xecbb).sort((a, b) => a - b);
 console.log(list.map((c) => `U+${c.toString(16).toUpperCase().padStart(4, '0')}`).join('\n'));
