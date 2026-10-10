@@ -6,7 +6,7 @@
    missing.txt の字が入ったら missing.txt から消すこと (一覧を正しく保つ)
 2. 名前: ファミリ名・PostScript 名・ライセンス (nameID 13/14)、em 1024
 3. 絞り込みで描き方が変わっていないこと (合成直後のフォントと全字を比べる。自動ヒンティングは除く)
-4. 前の版と比べて描き方が変わった字: expected-changes.txt に書いた字だけ許す
+4. 前の版と比べて描き方が変わった字: expected-changes.txt に書いた字だけ許す (`*` は全部)
 """
 
 import os
@@ -27,13 +27,17 @@ def codepoints(name):
     with open(path, encoding='utf-8') as f:
         for line in f:
             s = line.split('#')[0].strip()
-            if s:
+            if s == '*':
+                out.append(-1)  # 全部 (元を替えたときだけ)
+            elif s:
                 out.append(int(s.split()[0][2:], 16))
     return out
 
 
-def label(cps):
-    return ' '.join(f'U+{c:04X}({chr(c)})' for c in sorted(cps))
+def label(cps, limit=200):
+    cps = sorted(cps)
+    more = f' ほか {len(cps) - limit} 字' if len(cps) > limit else ''
+    return ' '.join(f'U+{c:04X}({chr(c)})' for c in cps[:limit]) + more
 
 
 font_path, merged_path = sys.argv[1], sys.argv[2]
@@ -129,7 +133,7 @@ if prev_path:
         print('  減った:', label(removed))
     if changed:
         print('  変わった:', label(changed))
-    if changed - allowed:
+    if -1 not in allowed and changed - allowed:
         errors.append(f'expected-changes.txt に無いのに描き方が変わった字: {label(changed - allowed)}')
 else:
     print('前の版: なし (比べない)')
