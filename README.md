@@ -16,7 +16,10 @@ BIZ UDゴシック (モリサワ) の角を機械で丸め、元に無い ARIB �
 | `denpa-font.woff2` | web フォント (ブラウザ) |
 | `SHA256SUMS` | 上の 2 つの sha256 |
 
-![字幕の大きさの見本 (黒地。上が v2.1、下が v3.0)](docs/v3/caption-white.png)
+見本 (v2.1 と v3.0 を交互に):
+
+![字幕の大きさの見本 (黒地)](docs/v3/caption-white.png)
+![字幕の大きさの見本 (白地)](docs/v3/caption-black.png)
 
 ## ライセンス
 

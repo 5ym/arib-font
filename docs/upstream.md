@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | denpa の表 | fetch.sh の `DENPA_COMMIT` (main の先頭) | CI が通れば自動で入る |
 | EUC-JP の表 | `WHATWG_ENCODING_COMMIT` (whatwg/encoding の main の先頭) | 同上 |
-| fontations (skrifa・write-fonts・read-fonts) | `tools/Cargo.toml` | 同じ版どうしでしか組めないので 1 本の PR にまとめ、同上 |
+| fontations (skrifa・write-fonts と、その下の read-fonts) | `tools/Cargo.toml` | 同じ版どうしでしか組めないので 1 本の PR にまとめ、同上 |
 | BIZ UDゴシック | fetch.sh の `BIZ_VERSION` (上流の GitHub リリースのタグ) | **人が見て入れる** (下) |
 
 ## 元フォント (BIZ UDゴシック)
