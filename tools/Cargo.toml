@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-skera = "0.8"
 skrifa = "0.48"
 ttf2woff2 = { version = "0.13.3", default-features = false }
 write-fonts = { version = "0.54", features = ["read"] }

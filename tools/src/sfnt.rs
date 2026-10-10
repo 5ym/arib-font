@@ -1,8 +1,7 @@
-//! TrueType (glyf) の字を読み書きする小さな道具。表の組み立ては write-fonts、
-//! 字の点の読み書きはここ (元の字のバイト列はそのまま運び、足す字だけ作る)。
+//! TrueType (glyf) の字を書く小さな道具。表の組み立ては write-fonts、字の点の並びはここ。
 
-use crate::err::{bail, Ctx, Result};
-use write_fonts::read::{FontRef, TableProvider};
+use crate::err::{Ctx, Result};
+use write_fonts::read::FontRef;
 use write_fonts::types::Tag;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -26,9 +25,6 @@ pub fn u16_at(b: &[u8], o: usize) -> u16 {
 pub fn i16_at(b: &[u8], o: usize) -> i16 {
     i16::from_be_bytes([b[o], b[o + 1]])
 }
-fn u32_at(b: &[u8], o: usize) -> u32 {
-    u32::from_be_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]])
-}
 pub fn put_u16(b: &mut [u8], o: usize, v: u16) {
     b[o..o + 2].copy_from_slice(&v.to_be_bytes());
 }
@@ -44,113 +40,8 @@ pub struct Glyphs {
 }
 
 impl Glyphs {
-    pub fn read(font: &FontRef) -> Result<Self> {
-        let n = font.maxp()?.num_glyphs() as usize;
-        let long = font.head()?.index_to_loc_format() == 1;
-        let loca = table(font, b"loca")?;
-        let glyf = table(font, b"glyf")?;
-        let at = |i: usize| -> usize {
-            if long {
-                u32_at(loca, i * 4) as usize
-            } else {
-                u16_at(loca, i * 2) as usize * 2
-            }
-        };
-        let data = (0..n).map(|i| glyf[at(i)..at(i + 1)].to_vec()).collect();
-        let hmtx = table(font, b"hmtx")?;
-        let nh = font.hhea()?.number_of_h_metrics() as usize;
-        let mut advance = Vec::with_capacity(n);
-        let mut lsb = Vec::with_capacity(n);
-        for i in 0..n {
-            if i < nh {
-                advance.push(u16_at(hmtx, i * 4));
-                lsb.push(i16_at(hmtx, i * 4 + 2));
-            } else {
-                advance.push(advance[nh - 1]);
-                lsb.push(i16_at(hmtx, nh * 4 + (i - nh) * 2));
-            }
-        }
-        Ok(Self { data, advance, lsb })
-    }
-
     pub fn len(&self) -> usize {
         self.data.len()
-    }
-
-    /// 部品 (composite) をばらした輪郭。座標は小数のまま (丸めるのは書くとき)
-    pub fn outline(&self, gid: usize) -> Result<Vec<Contour>> {
-        self.outline_at(gid, 0)
-    }
-
-    fn outline_at(&self, gid: usize, depth: usize) -> Result<Vec<Contour>> {
-        let b = &self.data[gid];
-        if b.is_empty() {
-            return Ok(vec![]);
-        }
-        if i16_at(b, 0) >= 0 {
-            return Ok(decode_simple(b));
-        }
-        if depth > 16 {
-            bail!("部品が深すぎます: glyph {gid}");
-        }
-        let mut out = vec![];
-        let mut p = 10;
-        loop {
-            let flags = u16_at(b, p);
-            let child = u16_at(b, p + 2) as usize;
-            p += 4;
-            let (dx, dy) = if flags & 0x1 != 0 {
-                p += 4;
-                (i16_at(b, p - 4) as f64, i16_at(b, p - 2) as f64)
-            } else {
-                p += 2;
-                (b[p - 2] as i8 as f64, b[p - 1] as i8 as f64)
-            };
-            if flags & 0x2 == 0 {
-                bail!("点で合わせる部品は扱えません: glyph {gid}");
-            }
-            if flags & 0x800 != 0 {
-                bail!("SCALED_COMPONENT_OFFSET は扱えません: glyph {gid}");
-            }
-            let f2 = |o: usize| i16_at(b, o) as f64 / 16384.0;
-            // 2x2 は xscale, scale01, scale10, yscale の順。x' = x*xx + y*xy, y' = x*yx + y*yy
-            let (mut xx, mut yx, mut xy, mut yy) = (1.0, 0.0, 0.0, 1.0);
-            if flags & 0x8 != 0 {
-                xx = f2(p);
-                yy = xx;
-                p += 2;
-            } else if flags & 0x40 != 0 {
-                xx = f2(p);
-                yy = f2(p + 2);
-                p += 4;
-            } else if flags & 0x80 != 0 {
-                xx = f2(p);
-                yx = f2(p + 2);
-                xy = f2(p + 4);
-                yy = f2(p + 6);
-                p += 8;
-            }
-            for c in self.outline_at(child, depth + 1)? {
-                out.push(
-                    c.iter()
-                        .map(|q| Pt { x: q.x * xx + q.y * xy + dx, y: q.x * yx + q.y * yy + dy, on: q.on })
-                        .collect(),
-                );
-            }
-            if flags & 0x20 == 0 {
-                break;
-            }
-        }
-        Ok(out)
-    }
-
-    /// 新しい字を足す。左の余白は字面の左端
-    pub fn add(&mut self, contours: &[Contour], advance: u16) -> u32 {
-        let data = encode_simple(contours);
-        self.lsb.push(if data.is_empty() { 0 } else { i16_at(&data, 2) });
-        self.data.push(data);
-        self.advance.push(advance);
-        (self.data.len() - 1) as u32
     }
 
     /// glyf・loca (長い形)・hmtx
@@ -190,52 +81,6 @@ impl Glyphs {
     }
 }
 
-fn decode_simple(b: &[u8]) -> Vec<Contour> {
-    let nc = i16_at(b, 0) as usize;
-    let ends: Vec<usize> = (0..nc).map(|i| u16_at(b, 10 + i * 2) as usize).collect();
-    let np = ends.last().map_or(0, |e| e + 1);
-    let mut p = 10 + nc * 2;
-    p += 2 + u16_at(b, p) as usize; // 命令
-    let mut flags = Vec::with_capacity(np);
-    while flags.len() < np {
-        let f = b[p];
-        p += 1;
-        flags.push(f);
-        if f & 0x8 != 0 {
-            let r = b[p];
-            p += 1;
-            for _ in 0..r {
-                flags.push(f);
-            }
-        }
-    }
-    let mut read = |short: u8, same: u8| -> Vec<i32> {
-        let mut v = 0i32;
-        flags
-            .iter()
-            .map(|&f| {
-                if f & short != 0 {
-                    let d = b[p] as i32;
-                    p += 1;
-                    v += if f & same != 0 { d } else { -d };
-                } else if f & same == 0 {
-                    v += i16_at(b, p) as i32;
-                    p += 2;
-                }
-                v
-            })
-            .collect()
-    };
-    let xs = read(0x2, 0x10);
-    let ys = read(0x4, 0x20);
-    let mut out = vec![];
-    let mut s = 0;
-    for e in ends {
-        out.push((s..=e).map(|i| Pt { x: xs[i] as f64, y: ys[i] as f64, on: flags[i] & 1 != 0 }).collect());
-        s = e + 1;
-    }
-    out
-}
 
 /// fontTools の otRound と同じ (0.5 は上へ)
 pub fn ot_round(v: f64) -> i32 {
@@ -323,10 +168,4 @@ pub fn encode_simple(contours: &[Contour]) -> Vec<u8> {
     out.extend(xb);
     out.extend(yb);
     out
-}
-
-/// Unicode → glyph
-pub fn charmap(font: &FontRef) -> std::collections::BTreeMap<u32, u32> {
-    use skrifa::MetadataProvider;
-    font.charmap().mappings().map(|(c, g)| (c, g.to_u32())).collect()
 }

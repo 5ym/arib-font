@@ -1,16 +1,14 @@
 //! 出来たフォントを確かめる。どれかに引っかかったら終了コード 1。
 //!
-//! 止めるのは機械で決まるものだけ (1・2・3・5)。4 は一覧と見本を出すだけで、変わってよいかは PR を見る人が決める。
+//! 止めるのは機械で決まるものだけ (1・2・4)。3 は一覧と見本を出すだけで、変わってよいかは PR を見る人が決める。
 //!
 //! 1. 字の揃い: denpa の表から作った字 (build/repertoire.txt) が全部あり (missing.txt の字を除く)、空白のほかは形があること
-//!    (カラー絵文字が既定の字も白黒の形を持つ)。missing.txt の字が入ったら missing.txt から消す
+//!    (カラー絵文字が既定の字も白黒の形を持つ)。missing.txt の字が入ったら missing.txt から消す。送り幅は半角 512 か全角 1024
 //! 2. 名前・em
-//! 3. 絞り込みで字が変わっていないこと: 合成直後のフォントと全字を、ヒンティング無し・フォント自身の
-//!    ヒンティング (TrueType の命令) で描いた輪郭 (24・36px) と送り幅で比べる
-//!    (自動ヒンティングはフォント全体の字から高さの帯を測るので、字を絞ると ²³ などが動く。ここでは比べない)
-//! 4. 前の版と比べて描き方が変わった字: 3 に自動ヒンティング (FreeType の light 相当) も足して比べ、
+//! 3. 前の版と比べて描き方が変わった字: ヒンティング無し・フォント自身のヒンティング (TrueType の命令)・
+//!    自動ヒンティング (FreeType の light 相当) で描いた輪郭 (24・36px) と送り幅で比べ、
 //!    一覧を出し、前と今の字形を並べた見本 (build/changes.svg) を書く (止めない)
-//! 5. woff2 を解いたもの (CI が woff2_decompress で解く) が ttf と同じ字になること
+//! 4. woff2 を解いたもの (CI が woff2_decompress で解く) が ttf と同じ字になること
 
 use crate::read_codepoints;
 use crate::err::Result;
@@ -113,9 +111,8 @@ fn differing(a: &[u8], b: &[u8], cps: &[u32], modes: &[Mode]) -> Result<BTreeSet
     Ok(cps.iter().copied().filter(|c| da.get(c) != db.get(c)).collect())
 }
 
-pub fn run(font_path: &Path, merged_path: &Path, prev_path: Option<&Path>, woff2_ttf: Option<&Path>) -> Result<()> {
+pub fn run(font_path: &Path, prev_path: Option<&Path>, woff2_ttf: Option<&Path>) -> Result<()> {
     let data = std::fs::read(font_path)?;
-    let merged = std::fs::read(merged_path)?;
     let font = FontRef::new(&data)?;
     let mut errors: Vec<String> = vec![];
     let cmap: BTreeMap<u32, GlyphId> = font.charmap().mappings().collect();
@@ -152,6 +149,15 @@ pub fn run(font_path: &Path, merged_path: &Path, prev_path: Option<&Path>, woff2
     if !empty.is_empty() {
         errors.push(format!("形の無い字: {}", label(&empty)));
     }
+    let metrics = font.glyph_metrics(Size::unscaled(), LocationRef::default());
+    let odd: BTreeSet<u32> = cmap
+        .iter()
+        .filter(|&(_, &gid)| !matches!(metrics.advance_width(gid).map(|a| a as i32), Some(512) | Some(1024)))
+        .map(|(&c, _)| c)
+        .collect();
+    if !odd.is_empty() {
+        errors.push(format!("送り幅が 512 でも 1024 でもない字 {}: {}", odd.len(), label(&odd)));
+    }
 
     // 2. 名前・em
     let get = |id: skrifa::string::StringId| font.localized_strings(id).english_or_first().map(|s| s.to_string());
@@ -177,15 +183,9 @@ pub fn run(font_path: &Path, merged_path: &Path, prev_path: Option<&Path>, woff2
         get(S::VERSION_STRING).unwrap_or_default()
     );
 
-    // 3. 絞り込みの前後
     let cps: Vec<u32> = have.iter().copied().collect();
-    let d = differing(&data, &merged, &cps, &[Mode::Unhinted, Mode::Interpreter])?;
-    if !d.is_empty() {
-        errors.push(format!("絞り込みで描き方が変わった字 {}: {}", d.len(), label(&d)));
-    }
-    println!("絞り込みの前後: {} 字を比べて違い {}", cps.len(), d.len());
 
-    // 4. 前の版
+    // 3. 前の版
     if let Some(p) = prev_path {
         let prev = std::fs::read(p)?;
         let pfont = FontRef::new(&prev)?;
@@ -211,7 +211,7 @@ pub fn run(font_path: &Path, merged_path: &Path, prev_path: Option<&Path>, woff2
         println!("前の版: なし (比べない)");
     }
 
-    // 5. woff2 (解くのは道具の外。CI が woff2_decompress で解いたものを渡す)
+    // 4. woff2 (解くのは道具の外。CI が woff2_decompress で解いたものを渡す)
     if let Some(p) = woff2_ttf {
         let back = std::fs::read(p)?;
         let d = differing(&data, &back, &cps, &[Mode::Unhinted, Mode::Interpreter])?;

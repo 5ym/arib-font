@@ -1,0 +1,163 @@
+name: source-bump
+
+# 元フォント (BIZ UDゴシック) の版上げの PR を仕上げる。
+#
+# Renovate が fetch.sh の BIZ_VERSION を上げた PR を出すと、そのブランチへの push でここが動く:
+#   1. 上流 (googlefonts/morisawa-biz-ud-gothic) のその版の ttf (zip の中か、そのまま) と OFL.txt を取り、sha256 を測る
+#   2. ttf と OFL.txt をこのリポジトリのリリース source-bizudgothic-<版> に置く (fetch.sh はそこから取る)
+#   3. fetch.sh の sha256 を書き換えてコミットし、同じブランチに push する
+#   4. GITHUB_TOKEN の push ではほかのワークフローが動かないので、そのコミットを build.yml で確かめ、
+#      ruleset の必須チェック (build・claude-review) の status を自分で付ける (xool と同じやり方)
+# 字の形が変わるので自動ではマージしない。CI の要約 (前の版から変わった字) と見本 (artifact の changes) を人が見る。
+# GitHub Apps・デプロイキーは使わず、GITHUB_TOKEN だけで動く。手で回すときは workflow_dispatch にブランチを渡す。
+on:
+  push:
+    branches: ['renovate/**']
+    paths: [fetch.sh]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 版を上げた fetch.sh のあるブランチ
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: source-bump-${{ inputs.branch || github.ref_name }}
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    permissions:
+      # リリースを作り、ブランチへ push する
+      contents: write
+    outputs:
+      sha: ${{ steps.push.outputs.sha }}
+      pushed: ${{ steps.push.outputs.pushed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.branch || github.ref_name }}
+
+      - name: 上流から取って sha256 を測る
+        id: src
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          ver=$(sed -n 's/^BIZ_VERSION=//p' fetch.sh)
+          [ -n "$ver" ] || { echo "fetch.sh に BIZ_VERSION がありません"; exit 1; }
+          tag="source-bizudgothic-${ver#v}"
+          echo "ver=$ver" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          mkdir -p work && cd work
+          # 上流のリリースの置き方は版ごとに違う (v1.051 は BIZUDGothic.zip、v1.05 は ttf をそのまま)。
+          # 置いてある順に探す。どれでも無ければ morisawa-biz-ud-gothic-fonts.zip (中の fonts/ttf/)
+          base="https://github.com/googlefonts/morisawa-biz-ud-gothic/releases/download/$ver"
+          from=
+          for asset in BIZUDGothic.zip BIZUDGothic-Regular.ttf morisawa-biz-ud-gothic-fonts.zip; do
+            if curl -sSLf --retry 5 -o "$asset" "$base/$asset"; then from=$asset; break; fi
+          done
+          [ -n "$from" ] || { echo "$ver のリリースに BIZ UDゴシックが見つかりません"; exit 1; }
+          case "$from" in
+            BIZUDGothic.zip) unzip -o -q -j "$from" 'BIZUDGothic-Regular.ttf' ;;
+            *.zip) unzip -o -q -j "$from" '*/fonts/ttf/BIZUDGothic-Regular.ttf' ;;
+          esac
+          [ -s BIZUDGothic-Regular.ttf ] || { echo "$from に BIZUDGothic-Regular.ttf がありません"; exit 1; }
+          echo "from=$from" >> "$GITHUB_OUTPUT"
+          curl -sSLf --retry 5 -o OFL.txt "https://raw.githubusercontent.com/googlefonts/morisawa-biz-ud-gothic/$ver/OFL.txt"
+          # 予約フォント名が足されていたら止める (名前を Denpa Font にしているので、あれば許諾を読み直す)
+          if grep -qi 'with Reserved Font Name' OFL.txt; then echo "OFL.txt に予約フォント名があります。README と照らしてください"; exit 1; fi
+          sha256sum BIZUDGothic-Regular.ttf OFL.txt > SHA256SUMS
+          cat SHA256SUMS
+          echo "up=$(sha256sum "$from" | cut -d" " -f1)" >> "$GITHUB_OUTPUT"
+          echo "ttf=$(sha256sum BIZUDGothic-Regular.ttf | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "ofl=$(sha256sum OFL.txt | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: リリースに置く
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VER: ${{ steps.src.outputs.ver }}
+          TAG: ${{ steps.src.outputs.tag }}
+          UP: ${{ steps.src.outputs.up }}
+          FROM: ${{ steps.src.outputs.from }}
+        run: |
+          set -eu
+          cd work
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            # 置いてあるものが同じなら何もしない (違えば止める。置き直しは人が決める)
+            gh release download "$TAG" -p SHA256SUMS -O old.sha256 --clobber
+            diff old.sha256 SHA256SUMS || { echo "$TAG の中身が上流と違います"; exit 1; }
+          else
+            cat > notes.md <<EOF
+          Denpa Font を作る元 (fetch.sh がここから取って sha256 で照らす)。source-bump ワークフローが作った。
+
+          - BIZ UDゴシック $VER (googlefonts/morisawa-biz-ud-gothic の GitHub リリース $VER) の \`$FROM\` (sha256 $UP) から \`BIZUDGothic-Regular.ttf\` を出したもの。中身は変えていない
+          - 許諾文 \`OFL.txt\` は同じリポジトリのタグ $VER のもの
+          - ライセンス: SIL Open Font License 1.1
+
+          これは Denpa Font の版ではない (タグが v で始まらない)。
+          EOF
+            gh release create "$TAG" --target main --prerelease --title "元フォント: BIZ UDゴシック Regular ${VER#v}" \
+              --notes-file notes.md BIZUDGothic-Regular.ttf OFL.txt SHA256SUMS
+          fi
+
+      - name: fetch.sh を書き換えて push する
+        id: push
+        env:
+          UP: ${{ steps.src.outputs.up }}
+          FROM: ${{ steps.src.outputs.from }}
+          TTF: ${{ steps.src.outputs.ttf }}
+          OFL: ${{ steps.src.outputs.ofl }}
+          VER: ${{ steps.src.outputs.ver }}
+        run: |
+          set -eu
+          sed -i "s/^BIZ_UPSTREAM=.*/BIZ_UPSTREAM=$FROM/; s/^BIZ_UPSTREAM_SHA256=.*/BIZ_UPSTREAM_SHA256=$UP/; s/^BIZ_SHA256=.*/BIZ_SHA256=$TTF/; s/^BIZ_OFL_SHA256=.*/BIZ_OFL_SHA256=$OFL/" fetch.sh
+          if git diff --quiet fetch.sh; then
+            echo "fetch.sh の sha256 はもう合っている (版上げではない push か、書き換え済み)"
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+          else
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -q -m "fetch.sh: BIZ UDゴシック $VER の sha256" fetch.sh
+            git push -q origin HEAD
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  # push したコミットを確かめる (GITHUB_TOKEN の push では build.yml が動かないので呼ぶ)
+  build:
+    needs: bump
+    # 書き換えて push したときだけ (ほかの PR の push では、いつもの CI と claude-review に任せる)
+    if: needs.bump.outputs.pushed == 'true'
+    # build.yml の release の段 (タグのときだけ動く) が contents: write を求めるので、呼ぶ側も渡す
+    permissions:
+      contents: write
+    uses: ./.github/workflows/build.yml
+    with:
+      ref: ${{ needs.bump.outputs.sha }}
+
+  status:
+    needs: [bump, build]
+    if: always() && needs.bump.outputs.pushed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+    steps:
+      - name: 必須チェックの status を付ける
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.bump.outputs.sha }}
+          RESULT: ${{ needs.build.result }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -eu
+          state=failure
+          [ "$RESULT" = success ] && state=success
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state="$state" -f context=build \
+            -f description="source-bump が確かめた (build.yml)" -f target_url="$RUN" > /dev/null
+          # claude-review は GITHUB_TOKEN の push では動かない。変わるのは fetch.sh の版と sha256 だけなので、
+          # 字の形は人が CI の要約と見本で確かめる
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state="$state" -f context=claude-review \
+            -f description="元フォントの版上げ: 字の形は人が見本で確かめる" -f target_url="$RUN" > /dev/null
