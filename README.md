@@ -62,14 +62,14 @@ BIZ UDゴシックの許諾には予約フォント名がありませんが、�
 | BIZ UDゴシック Regular | 1.051 | <https://github.com/googlefonts/morisawa-biz-ud-gothic> (リリース v1.051 の `BIZUDGothic.zip`) |
 
 使うのは GitHub で OFL 1.1 で配られているものだけです (Windows に入っている BIZ UDゴシックは別の許諾なので使いません)。
-配布元の書庫 (`BIZUDGothic.zip`、sha256 `30692df621b92df13b88f1360aed1ab6ae50de441bce751a396c6439045cd759`) から出した ttf と、
+配布元のリリースの `BIZUDGothic.zip` (sha256 `30692df621b92df13b88f1360aed1ab6ae50de441bce751a396c6439045cd759`。fetch.sh の `BIZ_UPSTREAM`) から出した ttf と、
 同じリポジトリのタグ v1.051 の許諾文 (`OFL.txt`) を、このリポジトリのリリース
 [source-bizudgothic-1.051](https://github.com/danything/denpa-font/releases/tag/source-bizudgothic-1.051) に置き、
 [fetch.sh](fetch.sh) はそこから取って sha256 で照らします。元のフォントは em 2048 なので、半分 (em 1024) にして使います。
 
 **元フォントの版上げ:** fetch.sh の `BIZ_VERSION` は Renovate が上流の GitHub リリースのタグを追い、新しい版が出ると PR を出します。
 sha256 は Renovate では書き換えられないので、その PR のブランチへの push で [source-bump.yml](.github/workflows/source-bump.yml) が動き、
-上流の zip と許諾文を取って sha256 を測り、リリース `source-bizudgothic-<版>` に置き、fetch.sh の sha256 を書き換えてコミットします
+上流のリリースの ttf (版によって zip の中か、そのまま) と許諾文を取って sha256 を測り、リリース `source-bizudgothic-<版>` に置き、fetch.sh の sha256 を書き換えてコミットします
 (GitHub Apps・デプロイキーは使わず GITHUB_TOKEN だけ。許諾文に予約フォント名が足されていたら止まる)。
 GITHUB_TOKEN の push では CI が動かないので、同じワークフローがそのコミットを build.yml で確かめ、必須チェック (build・claude-review) の status を付けます。
 動かなかったときは、Actions の source-bump を `workflow_dispatch` でそのブランチを渡して回します。
