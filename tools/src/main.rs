@@ -288,7 +288,7 @@ fn build(version: &str) -> Result<()> {
     fs::write(out.join("dist/denpa-font.ttf"), &ttf)?;
     let woff2 = ttf2woff2::encode(&ttf, ttf2woff2::BrotliQuality::from(11u8)).map_err(|e| format!("woff2: {e}"))?;
     fs::write(out.join("dist/denpa-font.woff2"), &woff2)?;
-    println!("dist/denpa-font.ttf {} バイト、dist/denpa-font.woff2 {} バイト", ttf.len(), woff2.len());
+    println!("{}/dist/denpa-font.ttf {} バイト、denpa-font.woff2 {} バイト", out.display(), ttf.len(), woff2.len());
     Ok(())
 }
 
