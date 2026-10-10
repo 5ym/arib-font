@@ -186,6 +186,15 @@ fn tokens(s: &str) -> Vec<String> {
 /// data/parts.txt を読む
 pub fn load(path: &str) -> Result<BTreeMap<u32, Entry>> {
     let text = std::fs::read_to_string(path).ctx(|| path.to_string())?;
+    parse(&text, path)
+}
+
+#[cfg(test)]
+pub fn load_str(text: &str) -> Result<BTreeMap<u32, Entry>> {
+    parse(text, "(test)")
+}
+
+fn parse(text: &str, path: &str) -> Result<BTreeMap<u32, Entry>> {
     let mut macros: BTreeMap<String, String> = BTreeMap::new();
     let mut out = BTreeMap::new();
     for (no, line) in text.lines().enumerate() {
@@ -248,6 +257,8 @@ mod tests {
 
     #[test]
     fn reads_parts() {
+        let t = part("\"5.1\" ~ 0,0,512,512 w60").unwrap();
+        assert!(matches!(t.src, Source::Text(ref s) if s == "5.1") && matches!(t.place, Place::Fit(..)) && t.weight == 60.0);
         let p = part("林 [0,-120,470,900] > 0 -120 430 900 w70").unwrap();
         assert!(matches!(p.src, Source::Char(0x6797)));
         assert_eq!(p.crop.as_ref().unwrap().len(), 4);

@@ -245,3 +245,34 @@ pub fn compose_text(text: &str) -> Vec<Part> {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sfnt::Pt;
+
+    fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Shape {
+        vec![[(x0, y0), (x0, y1), (x1, y1), (x1, y0)].iter().map(|&(x, y)| Pt { x, y, on: true }).collect()]
+    }
+
+    #[test]
+    fn text_is_packed_into_box() {
+        let mut base = Base::new();
+        base.insert('5' as u32, (rect(60.0, 0.0, 450.0, 800.0), 512));
+        base.insert('.' as u32, (rect(200.0, 0.0, 300.0, 100.0), 512));
+        base.insert('1' as u32, (rect(150.0, 0.0, 350.0, 800.0), 512));
+        let p = crate::parts::load_str("U+1F1A0 x = \"5.1\" ~ 100,100,900,600 w60").unwrap();
+        let crate::parts::Entry::Parts { parts, .. } = &p[&0x1F1A0] else { panic!() };
+        let out = expand(parts, &base).unwrap();
+        assert_eq!(out.len(), 3);
+        let boxes: Vec<(f64, f64, f64, f64)> = out.iter().map(|q| match q.place { Place::Stretch(a, b, c, d) => (a, b, c, d), _ => panic!() }).collect();
+        // 枠に収まり、左から順に重ならずに並び、横の真ん中は枠の真ん中
+        for b in &boxes {
+            assert!(b.0 >= 100.0 - 1e-6 && b.2 <= 900.0 + 1e-6 && b.1 >= 100.0 - 1e-6 && b.3 <= 600.0 + 1e-6, "{b:?}");
+        }
+        assert!(boxes.windows(2).all(|w| w[0].2 < w[1].0));
+        let mid = (boxes[0].0 + boxes[2].2) / 2.0;
+        assert!((mid - 500.0).abs() < 1e-6, "{mid}");
+        assert!(out.iter().all(|q| q.weight == 60.0 && matches!(q.src, Source::Char(_))));
+    }
+}
