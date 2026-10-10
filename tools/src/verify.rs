@@ -201,8 +201,12 @@ pub fn run(font_path: &Path, merged_path: &Path, prev_path: Option<&Path>, woff2
             }
         }
         let shown: BTreeSet<u32> = changed.union(&added).chain(removed.iter()).copied().collect();
-        std::fs::write("build/changes.svg", sample(&prev, &data, &shown)?)?;
-        println!("  見本: build/changes.svg (左が前の版、右が今。{} 字)", shown.len().min(SAMPLE_LIMIT));
+        if !shown.is_empty() {
+            std::fs::write("build/changes.svg", sample(&prev, &data, &shown)?)?;
+            let n = shown.len();
+            let part = if n > SAMPLE_LIMIT { format!("{n} 字のうち初めの {SAMPLE_LIMIT} 字") } else { format!("{n} 字") };
+            println!("  見本: build/changes.svg (左が前の版、右が今。{part})");
+        }
     } else {
         println!("前の版: なし (比べない)");
     }
