@@ -117,6 +117,9 @@ jobs:
     needs: bump
     # 書き換えて push したときだけ (ほかの PR の push では、いつもの CI と claude-review に任せる)
     if: needs.bump.outputs.pushed == 'true'
+    # build.yml の release の段 (タグのときだけ動く) が contents: write を求めるので、呼ぶ側も渡す
+    permissions:
+      contents: write
     uses: ./.github/workflows/build.yml
     with:
       ref: ${{ needs.bump.outputs.sha }}
