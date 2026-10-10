@@ -214,8 +214,9 @@ fn build(version: &str) -> Result<()> {
             // 先が収める字に無ければ (DENPA_ONLY で試すときなど)、元の字から作る
             None => match base.get(&t) {
                 Some((s, adv)) => {
+                    let job = if sharp.contains(&t) || s.is_empty() { Job::Keep(s.clone()) } else { Job::Fillet(s.clone()) };
                     cmap.insert(c, jobs.len() as u32);
-                    jobs.push((Job::Fillet(s.clone()), *adv));
+                    jobs.push((job, *adv));
                     writeln!(report, "alias   U+{c:04X} U+{t:04X}  # {}", ch(t))?;
                 }
                 None => bail!("parts.txt: U+{c:04X} の先 U+{t:04X} がフォントにありません"),
