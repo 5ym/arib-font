@@ -4,7 +4,7 @@
 //!   cargo run ... -- verify dist/denpa-font.ttf [--prev ttf] [--woff2 ttf]   確かめる
 //!   cargo run ... -- repertoire                                           収める字の一覧を見る
 //!
-//! 並べて作るスレッドの数は DENPA_THREADS (無ければ CPU の数)。
+//! 並べて作るスレッドの数は DENPA_THREADS (無ければ CPU の数)。書き出す先は DENPA_OUT (無ければここ。build/ と dist/)。
 
 mod draw;
 mod err;
@@ -233,9 +233,11 @@ fn build(version: &str) -> Result<()> {
     for c in missing {
         writeln!(report, "# missing U+{c:04X} {}", ch(c))?;
     }
-    fs::create_dir_all("build")?;
+    // 書き出す先 (DENPA_OUT。無ければリポジトリの根)。CI は 2 回目を別の所に作って比べる
+    let out = std::path::PathBuf::from(std::env::var("DENPA_OUT").unwrap_or_else(|_| ".".into()));
+    fs::create_dir_all(out.join("build"))?;
     let rep: Vec<u32> = repertoire.codepoints.iter().copied().collect();
-    fs::write("build/repertoire.txt", rep.iter().map(|c| format!("U+{c:04X}\n")).collect::<String>())?;
+    fs::write(out.join("build/repertoire.txt"), rep.iter().map(|c| format!("U+{c:04X}\n")).collect::<String>())?;
 
     // 字を作る (並べて)
     let t0 = std::time::Instant::now();
@@ -276,16 +278,16 @@ fn build(version: &str) -> Result<()> {
             writeln!(report, "raster  U+{c:04X}  # {} (輪郭のまま丸めると輪郭が交わるので格子で丸めた)", ch(c))?;
         }
     }
-    fs::write("build/extras.txt", &report)?;
+    fs::write(out.join("build/extras.txt"), &report)?;
     let lsb = data_out.iter().map(|d| if d.is_empty() { 0 } else { sfnt::i16_at(d, 2) }).collect();
     let glyphs = Glyphs { data: data_out, advance: jobs.iter().map(|j| j.1).collect(), lsb };
     eprintln!("{} 字を {:.1} 秒で作った ({threads} スレッド)", glyphs.len(), t0.elapsed().as_secs_f64());
 
     let ttf = tables(&font, &glyphs, &cmap, major, minor, epoch)?;
-    fs::create_dir_all("dist")?;
-    fs::write("dist/denpa-font.ttf", &ttf)?;
+    fs::create_dir_all(out.join("dist"))?;
+    fs::write(out.join("dist/denpa-font.ttf"), &ttf)?;
     let woff2 = ttf2woff2::encode(&ttf, ttf2woff2::BrotliQuality::from(11u8)).map_err(|e| format!("woff2: {e}"))?;
-    fs::write("dist/denpa-font.woff2", &woff2)?;
+    fs::write(out.join("dist/denpa-font.woff2"), &woff2)?;
     println!("dist/denpa-font.ttf {} バイト、dist/denpa-font.woff2 {} バイト", ttf.len(), woff2.len());
     Ok(())
 }
