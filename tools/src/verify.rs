@@ -1,5 +1,7 @@
 //! 出来たフォントを確かめる。どれかに引っかかったら終了コード 1。
 //!
+//! 止めるのは機械で決まるものだけ (1・2・3・5)。4 は一覧と見本を出すだけで、変わってよいかは PR を見る人が決める。
+//!
 //! 1. 字の揃い: denpa の表から作った字 (build/repertoire.txt) が全部あり (missing.txt の字を除く)、空白のほかは形があること
 //!    (カラー絵文字が既定の字も白黒の形を持つ)。missing.txt の字が入ったら missing.txt から消す
 //! 2. 名前・em
@@ -7,7 +9,7 @@
 //!    ヒンティング (TrueType の命令) で描いた輪郭 (24・36px) と送り幅で比べる
 //!    (自動ヒンティングはフォント全体の字から高さの帯を測るので、字を絞ると ²³ などが動く。ここでは比べない)
 //! 4. 前の版と比べて描き方が変わった字: 3 に自動ヒンティング (FreeType の light 相当) も足して比べ、
-//!    expected-changes.txt に書いた字だけ許す (`*` は全部)
+//!    一覧を出し、前と今の字形を並べた見本 (build/changes.svg) を書く (止めない)
 //! 5. woff2 を解いたもの (CI が woff2_decompress で解く) が ttf と同じ字になること
 
 use crate::read_codepoints;
@@ -192,16 +194,18 @@ pub fn run(font_path: &Path, merged_path: &Path, prev_path: Option<&Path>, woff2
         let removed: BTreeSet<u32> = pset.difference(&have).copied().collect();
         let both: Vec<u32> = have.intersection(&pset).copied().collect();
         let changed = differing(&data, &prev, &both, &[Mode::Unhinted, Mode::Interpreter, Mode::Auto])?;
-        let allowed: BTreeSet<u32> = read_codepoints("expected-changes.txt")?.into_iter().collect();
         println!("前の版から: 増えた字 {}、減った字 {}、描き方が変わった字 {}", added.len(), removed.len(), changed.len());
         for (name, set) in [("増えた", &added), ("減った", &removed), ("変わった", &changed)] {
             if !set.is_empty() {
                 println!("  {name}: {}", label(set));
             }
         }
-        let bad: BTreeSet<u32> = changed.difference(&allowed).copied().collect();
-        if !allowed.contains(&u32::MAX) && !bad.is_empty() {
-            errors.push(format!("expected-changes.txt に無いのに描き方が変わった字: {}", label(&bad)));
+        let shown: BTreeSet<u32> = changed.union(&added).chain(removed.iter()).copied().collect();
+        if !shown.is_empty() {
+            std::fs::write("build/changes.svg", sample(&prev, &data, &shown)?)?;
+            let n = shown.len();
+            let part = if n > SAMPLE_LIMIT { format!("{n} 字のうち初めの {SAMPLE_LIMIT} 字") } else { format!("{n} 字") };
+            println!("  見本: build/changes.svg (左が前の版、右が今。{part})");
         }
     } else {
         println!("前の版: なし (比べない)");
@@ -224,4 +228,65 @@ pub fn run(font_path: &Path, merged_path: &Path, prev_path: Option<&Path>, woff2
         std::process::exit(1);
     }
     Ok(())
+}
+
+const SAMPLE_LIMIT: usize = 600;
+
+/// 輪郭を SVG の path にする (y は上下を返す)
+#[derive(Default)]
+struct Svg(String);
+impl OutlinePen for Svg {
+    fn move_to(&mut self, x: f32, y: f32) {
+        self.0 += &format!("M{x:.0} {:.0}", -y);
+    }
+    fn line_to(&mut self, x: f32, y: f32) {
+        self.0 += &format!("L{x:.0} {:.0}", -y);
+    }
+    fn quad_to(&mut self, cx: f32, cy: f32, x: f32, y: f32) {
+        self.0 += &format!("Q{cx:.0} {:.0} {x:.0} {:.0}", -cy, -y);
+    }
+    fn curve_to(&mut self, a: f32, b: f32, c: f32, d: f32, x: f32, y: f32) {
+        self.0 += &format!("C{a:.0} {:.0} {c:.0} {:.0} {x:.0} {:.0}", -b, -d, -y);
+    }
+    fn close(&mut self) {
+        self.0.push('Z');
+    }
+}
+
+fn path(data: &[u8], c: u32) -> Result<String> {
+    let font = FontRef::new(data)?;
+    let Some(gid) = font.charmap().map(c) else { return Ok(String::new()) };
+    let mut pen = Svg::default();
+    if let Some(g) = font.outline_glyphs().get(gid) {
+        g.draw(DrawSettings::unhinted(Size::unscaled(), LocationRef::default()), &mut pen)?;
+    }
+    Ok(pen.0)
+}
+
+/// 前の版と今の字形を並べた見本 (1 行に 8 組、字の下に U+XXXX)
+fn sample(prev: &[u8], now: &[u8], cps: &BTreeSet<u32>) -> Result<String> {
+    let (cell, cols) = (1100.0, 8usize);
+    let n = cps.len().min(SAMPLE_LIMIT);
+    let rows = n.div_ceil(cols).max(1);
+    let (w, h) = (cell * 2.0 * cols as f64, (cell + 300.0) * rows as f64);
+    let mut out = format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {w} {h}\" width=\"{}\" height=\"{}\">\n<rect width=\"100%\" height=\"100%\" fill=\"#fff\"/>\n",
+        w / 20.0,
+        h / 20.0
+    );
+    for (i, &c) in cps.iter().take(n).enumerate() {
+        let (x, y) = ((i % cols) as f64 * cell * 2.0, (i / cols) as f64 * (cell + 300.0));
+        for (k, data) in [prev, now].into_iter().enumerate() {
+            let fill = if k == 0 { "#888" } else { "#000" };
+            out += &format!(
+                "<path transform=\"translate({} {})\" fill=\"{fill}\" d=\"{}\"/>\n",
+                x + k as f64 * cell + 40.0,
+                y + 900.0,
+                path(data, c)?
+            );
+        }
+        out += &format!("<text x=\"{}\" y=\"{}\" font-size=\"160\" font-family=\"monospace\">U+{c:04X}</text>\n", x + 40.0, y + 1250.0);
+    }
+    out += "</svg>\n";
+    Ok(out)
 }
