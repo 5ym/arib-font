@@ -267,6 +267,8 @@ mod tests {
 
     #[test]
     fn reads_parts() {
+        let r = part("→ r45 s56 w66").unwrap();
+        assert!(r.rotate == 45.0 && r.stem == 56.0 && r.weight == 66.0);
         let t = part("\"5.1\" ~ 0,0,512,512 w60").unwrap();
         assert!(matches!(t.src, Source::Text(ref s) if s == "5.1") && matches!(t.place, Place::Fit(..)) && t.weight == 60.0);
         let p = part("林 [0,-120,470,900] > 0 -120 430 900 w70").unwrap();

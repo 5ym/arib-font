@@ -286,3 +286,25 @@ mod tests {
         assert!(out.iter().all(|q| q.weight == 60.0 && matches!(q.src, Source::Char(_))));
     }
 }
+
+#[cfg(test)]
+mod rotate_tests {
+    use super::*;
+
+    #[test]
+    fn rotated_bar_stands_up() {
+        // 横の棒 (幅 400・太さ 40) を 90° 回すと縦の棒になる (真ん中は動かない)
+        let p = crate::parts::load_str("U+E000 x = rect(300,380,700,420) r90").unwrap();
+        let crate::parts::Entry::Parts { parts, .. } = &p[&0xE000] else { panic!() };
+        let (g, mask) = compose(parts, &Base::new()).unwrap();
+        let on: Vec<(f64, f64)> = (0..g.h)
+            .flat_map(|j| (0..g.w).map(move |i| (i, j)))
+            .filter(|&(i, j)| mask[j * g.w + i])
+            .map(|(i, j)| ((g.x0 + i as f64 + 0.5) * round::RES, (g.y0 + j as f64 + 0.5) * round::RES))
+            .collect();
+        let (x0, x1) = on.iter().fold((f64::MAX, f64::MIN), |a, p| (a.0.min(p.0), a.1.max(p.0)));
+        let (y0, y1) = on.iter().fold((f64::MAX, f64::MIN), |a, p| (a.0.min(p.1), a.1.max(p.1)));
+        assert!((x1 - x0 - 40.0).abs() < 4.0 && (y1 - y0 - 400.0).abs() < 4.0, "{x0} {x1} {y0} {y1}");
+        assert!(((x0 + x1) / 2.0 - 500.0).abs() < 2.0 && ((y0 + y1) / 2.0 - 400.0).abs() < 2.0);
+    }
+}
