@@ -3,10 +3,12 @@
 //!   cargo run --release --manifest-path tools/Cargo.toml -- build 2.1      元から作る (dist/。build/ に途中のもの)
 //!   cargo run ... -- verify dist/denpa-font.ttf build/merged.ttf [前の版]   確かめる
 //!   cargo run ... -- repertoire                                            収める字の一覧を見る
+//!   cargo run ... -- round / coverage                                      試し: 角ゴシックを丸める (round.rs)
 
 mod draw;
 mod err;
 mod repertoire;
+mod round;
 mod sfnt;
 mod verify;
 
@@ -46,6 +48,8 @@ fn main() -> Result<()> {
             verify::run(Path::new(&args[1]), Path::new(&args[2]), opt("--prev"), opt("--woff2"))
         }
         Some("repertoire") => repertoire::run(Path::new(SRC)),
+        Some("round") => round::run(&args),
+        Some("coverage") => round::coverage(&args[1..]),
         _ => bail!("build <版> | verify <ttf> <merged> [--prev ttf] [--woff2 ttf] | repertoire (先に fetch.sh)"),
     }
 }
