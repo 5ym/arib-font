@@ -29,27 +29,30 @@ jobs:
           fi
           echo "epoch=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-buildx-action@v4
-      - name: Toolchain
-        uses: docker/build-push-action@v7
+      # 道具は Rust の 1 本 (tools/)。版は rust-toolchain.toml と tools/Cargo.lock で固定
+      - uses: actions/cache@v6
         with:
-          context: .
-          load: true
-          tags: denpa-font-tools
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tools/target
+          key: cargo-${{ hashFiles('rust-toolchain.toml', 'tools/Cargo.lock') }}
 
       - name: Build
         env:
           VERSION: ${{ steps.v.outputs.version }}
           SOURCE_DATE_EPOCH: ${{ steps.v.outputs.epoch }}
         run: |
-          run() { docker run --rm -v "$PWD:/w" -e VERSION -e SOURCE_DATE_EPOCH denpa-font-tools "$@"; }
-          run sh ./build.sh
-          # 同じ入力から同じバイト列になること (build/ と dist/ はコンテナの root が書く)
+          # 元フォント・denpa の表などを取ってきて確かめる (道具はネットに触らない)
+          sh fetch.sh
+          cargo test --release --locked --manifest-path tools/Cargo.toml
+          cargo build --release --locked --manifest-path tools/Cargo.toml
+          tools/target/release/denpa-font build "$VERSION"
+          (cd dist && sha256sum denpa-font.ttf denpa-font.woff2 > SHA256SUMS && cat SHA256SUMS)
+          # 同じ入力から同じバイト列になること
           cp dist/SHA256SUMS first.sha256
-          run sh ./build.sh > /dev/null
-          diff first.sha256 dist/SHA256SUMS
+          tools/target/release/denpa-font build "$VERSION" > /dev/null
+          (cd dist && sha256sum -c ../first.sha256)
 
       - name: Previous release
         env:
@@ -68,8 +71,10 @@ jobs:
       - name: Verify
         run: |
           set -o pipefail
-          docker run --rm -v "$PWD:/w" denpa-font-tools \
-            python3 -I scripts/verify.py dist/denpa-font.ttf build/merged.ttf ${PREV:+prev.ttf} | tee verify.txt
+          # woff2 は Google の woff2_decompress で解いて ttf と比べる
+          sudo apt-get install -y -qq woff2 > /dev/null
+          cp dist/denpa-font.woff2 build/check.woff2 && woff2_decompress build/check.woff2
+          tools/target/release/denpa-font verify dist/denpa-font.ttf build/merged.ttf ${PREV:+--prev prev.ttf} --woff2 build/check.ttf | tee verify.txt
           {
             echo "Denpa Font ${GITHUB_REF_NAME}"
             echo

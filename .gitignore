@@ -1,5 +1,6 @@
 build/
 dist/
+tools/target/
 prev.ttf
 verify.txt
 notes.md

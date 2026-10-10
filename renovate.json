@@ -2,5 +2,27 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "github>5ym/repo-config"
+  ],
+  "customManagers": [
+    {
+      "description": "fetch.sh が取る表の版 (denpa の DENPA_COMMIT・WHATWG の WHATWG_ENCODING_COMMIT)。main の先頭のコミットを追う",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^fetch\\.sh$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=git-refs depName=(?<depName>\\S+) branch=(?<currentValue>\\S+)\\s+\\w+=(?<currentDigest>[0-9a-f]{40})"
+      ],
+      "datasourceTemplate": "git-refs"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "fontations (skrifa・write-fonts・skera) は同じ版どうしでしか組めないので 1 本の PR にまとめ、CI (verify が字を全部比べる) が通れば入れる",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["skrifa", "write-fonts", "read-fonts", "skera"],
+      "groupName": "fontations",
+      "automerge": true
+    }
   ]
 }
