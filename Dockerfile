@@ -7,7 +7,7 @@ RUN rm -f /etc/apt/sources.list.d/debian.sources \
  && echo "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/${SNAPSHOT} trixie-security main" >> /etc/apt/sources.list \
  && apt-get -o Acquire::Retries=5 update \
  && apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
-      fontforge-nox python3-fonttools python3-brotli woff2 \
+      python3-fonttools python3-brotli woff2 \
       python3-freetype python3-numpy p7zip-full lhasa ca-certificates curl \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /w
