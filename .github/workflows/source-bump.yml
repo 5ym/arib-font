@@ -110,6 +110,7 @@ jobs:
           FROM: ${{ steps.src.outputs.from }}
           TTF: ${{ steps.src.outputs.ttf }}
           OFL: ${{ steps.src.outputs.ofl }}
+          VER: ${{ steps.src.outputs.ver }}
         run: |
           set -eu
           sed -i "s/^BIZ_UPSTREAM=.*/BIZ_UPSTREAM=$FROM/; s/^BIZ_UPSTREAM_SHA256=.*/BIZ_UPSTREAM_SHA256=$UP/; s/^BIZ_SHA256=.*/BIZ_SHA256=$TTF/; s/^BIZ_OFL_SHA256=.*/BIZ_OFL_SHA256=$OFL/" fetch.sh
@@ -119,7 +120,7 @@ jobs:
           else
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -q -m "fetch.sh: BIZ UDゴシック ${{ steps.src.outputs.ver }} の sha256" fetch.sh
+            git commit -q -m "fetch.sh: BIZ UDゴシック $VER の sha256" fetch.sh
             git push -q origin HEAD
             echo "pushed=true" >> "$GITHUB_OUTPUT"
           fi
