@@ -1,6 +1,6 @@
 #!/bin/sh
 # 道具 (tools/) が読むものを build/src に取ってきて確かめる。道具はネットにも書庫にも触らない。
-#   要るもの: curl・sha256sum・openssl・base64・7z・tar (GitHub の ubuntu ランナーには入っている)
+#   要るもの: curl・sha256sum・openssl・base64・tar (GitHub の ubuntu ランナーには入っている)
 set -eu
 cd "$(dirname "$0")"
 S=build/src
@@ -12,9 +12,10 @@ DENPA_COMMIT=4e71a4bede67a324edec1fae2d147e1137a40924
 # EUC-JP の表 (WHATWG Encoding Standard の index-jis0208。ブラウザの TextDecoder と同じ字)
 # renovate: datasource=git-refs depName=https://github.com/whatwg/encoding branch=main
 WHATWG_ENCODING_COMMIT=a985b62a9b45c17da3e17a9f0a0b4e30c34c4a8a
-# 源柔ゴシック 1.002.20150607 (http://jikasei.me/font/genjyuu/)。等幅 Regular を元にする
-GENJYUU_URL=https://ftp.iij.ad.jp/pub/osdn.jp/users/8/8636/genjyuugothic-20150607.7z
-GENJYUU_SHA256=1997876351985ac9e2ea7a7a809c91e3fdaef878ece5b830f2512c882c3e49db
+# 源柔ゴシック等幅 Regular 1.002.20150607 (最終版。http://jikasei.me/font/genjyuu/)。
+# 配布元の書庫 (OSDN のミラー) はいつ消えるか分からないので、出した ttf をこのリポジトリのリリースに置いてある
+GENJYUU_URL=https://github.com/danything/denpa-font/releases/download/source-genjyuu-20150607/GenJyuuGothic-Monospace-Regular.ttf
+GENJYUU_SHA256=f03d3b1a3a3558d72effacd8f4bc79795199782a7c501dc1f85fde1f49ca9c3b
 
 # get <url> <出力> : 404 なら 1 を返す (ほかの失敗は止める)
 get() {
@@ -27,10 +28,9 @@ get() {
 }
 
 # 元フォント
-arc="$S/$(basename "$GENJYUU_URL")"
+arc="$S/GenJyuuGothic-Monospace-Regular.ttf"
 echo "$GENJYUU_SHA256  $arc" | sha256sum -c --status 2>/dev/null || get "$GENJYUU_URL" "$arc"
 echo "$GENJYUU_SHA256  $arc" | sha256sum -c --quiet
-7z e -y -o"$S" "$arc" GenJyuuGothic-Monospace-Regular.ttf > /dev/null
 
 # denpa の表 (無いファイルは飛ばす。表はいずれ 1 つのファイルにまとまる)
 if [ "$(cat "$S/denpa/COMMIT" 2>/dev/null)" != "$DENPA_COMMIT" ]; then

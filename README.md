@@ -60,9 +60,12 @@ denpa のフォントの版 (と sha256) を上げる。
 
 | フォント | 版 | 配布元 |
 | --- | --- | --- |
-| 源柔ゴシック等幅 Regular | 1.002.20150607 | <http://jikasei.me/font/genjyuu/> |
+| 源柔ゴシック等幅 Regular | 1.002.20150607 (最終版) | <http://jikasei.me/font/genjyuu/> |
 
-配布元・版・sha256 は [fetch.sh](fetch.sh) に固定してあります。元にある字 (7,514 字) はそのまま運び、無い字は次のように作ります
+配布元の書庫 (`genjyuugothic-20150607.7z`。OSDN のミラー <https://ftp.iij.ad.jp/pub/osdn.jp/users/8/8636/genjyuugothic-20150607.7z>、
+sha256 `1997876351985ac9e2ea7a7a809c91e3fdaef878ece5b830f2512c882c3e49db`) は OSDN が閉じたあとの残りでいつ消えるか分からないので、
+そこから出した ttf と許諾文をこのリポジトリのリリース [source-genjyuu-20150607](https://github.com/danything/denpa-font/releases/tag/source-genjyuu-20150607)
+に置き、[fetch.sh](fetch.sh) はそこから取って sha256 で照らします。元にある字 (7,514 字) はそのまま運び、無い字は次のように作ります
 (作り方の一覧はビルドのたびに `build/extras.txt` に出る)。描き方の数値 (線の太さ・縮め率など) は `tools/src/draw.rs` の頭にまとめてあります。
 
 | 作り方 | 字 | 数 |
@@ -100,7 +103,7 @@ denpa のフォントの版 (と sha256) を上げる。
 
 ## ビルドとリリースの仕方
 
-取ってくる・確かめる・ほどくのは [fetch.sh](fetch.sh) (curl・sha256sum・openssl・7z・tar)、フォントを作るのは Rust の道具 1 本
+取ってくる・確かめる・ほどくのは [fetch.sh](fetch.sh) (curl・sha256sum・openssl・tar)、フォントを作るのは Rust の道具 1 本
 ([tools/](tools)。依存は fontations の skrifa・write-fonts・skera と woff2 の ttf2woff2 だけ。道具はネットに触らない)。
 Rust の版は [rust-toolchain.toml](rust-toolchain.toml)、依存は `tools/Cargo.lock` で固定してあります。同じ入力から同じバイト列ができます。
 
@@ -112,14 +115,14 @@ tools/target/release/denpa-font verify dist/denpa-font.ttf build/merged.ttf [--p
 tools/target/release/denpa-font repertoire    # 収める字の一覧を見る
 ```
 
-SHA256SUMS は CI のシェルが作ります。woff2 は CI が Google の `woff2_decompress` で解いて ttf と比べます。
+SHA256SUMS は CI のシェルが作ります。fontations には WOFF2 を書き出すものが無いので woff2 は ttf2woff2 で作り、ttf2woff2 が勧めるとおり出力を確かめるため、CI が Google の `woff2_decompress` で解いて ttf と比べます。
 
-`verify` が確かめること (PR・main・タグのたびに CI が動かす):
+`verify` が確かめること (PR・main・タグのたびに CI が動かす。止めるのは機械で決まるものだけ):
 
 - 字の揃い (denpa の表の字が全部ある。[missing.txt](missing.txt) の字を除く)、空白のほかに形の無い字が無いこと
 - 名前・em
 - 絞る前後で字が同じ (ヒンティング無し・フォント自身のヒンティングで描いた輪郭と送り幅)
-- 前の版から描き方が変わった字は [expected-changes.txt](expected-changes.txt) にあるものだけ (`*` は全部)。字を変える PR では同じ PR で書き、リリースのあと空に戻す
+- 前の版から描き方が変わった字の一覧と、前と今の字形を並べた見本 (`build/changes.svg`) を出す。**止めない** — 変わってよいかは PR を見る人が決める (一覧は CI のジョブの要約、見本は artifact の `changes`)
 - woff2 を解いたものが ttf と同じ字になる
 
 **版**: タグは `vX.Y` (例 `v2.1`)。元を替える・字を減らす・字の幅や行の高さを変えるときは X、字を足す・直すときは Y を上げます。フォントの版 (nameID 5) は `Version X.YYY`。タグを push すると GitHub Actions が作って確かめ、Releases に ttf・woff2・SHA256SUMS を置きます。
