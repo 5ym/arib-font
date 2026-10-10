@@ -16,6 +16,7 @@
 
 use anyhow::{bail, Context, Result};
 use std::collections::{BTreeMap, BTreeSet};
+use sha2::Digest;
 use std::io::Read;
 use std::path::Path;
 
@@ -67,7 +68,9 @@ fn cached(dir: &Path, name: &str, url: &str) -> Result<Option<Vec<u8>>> {
     std::fs::create_dir_all(dir)?;
     match get(url)? {
         Some(b) => {
-            std::fs::write(&p, &b)?;
+            let tmp = p.with_extension("part");
+            std::fs::write(&tmp, &b)?;
+            std::fs::rename(&tmp, &p)?;
             Ok(Some(b))
         }
         None => {
@@ -187,6 +190,22 @@ pub fn load(cache: &Path) -> Result<Repertoire> {
         .trim_start_matches(['^', '~']);
     let tgz = cached(&dir, &format!("web-bml-{ver}.tgz"), &format!("https://registry.npmjs.org/web-bml/-/web-bml-{ver}.tgz"))?
         .context("web-bml がありません")?;
+    // web-bml の tgz は denpa の bun.lock の integrity (sha512) で確かめる
+    let lock = cached(&dir, "bun.lock", &raw("bun.lock"))?.context("denpa の bun.lock がありません")?;
+    let lock = String::from_utf8(lock)?;
+    let line = lock
+        .lines()
+        .find(|l| l.contains(&format!("[\"web-bml@{ver}\"")))
+        .with_context(|| format!("bun.lock に web-bml@{ver} がありません"))?;
+    let want = line
+        .rsplit("\"sha512-")
+        .next()
+        .and_then(|s| s.split('"').next())
+        .context("bun.lock の web-bml に integrity がありません")?;
+    let got = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, sha2::Sha512::digest(&tgz));
+    if got != want {
+        bail!("web-bml-{ver}.tgz の sha512 が denpa の bun.lock と違います (build/src の取ったものを消して取り直す)");
+    }
     let mut jis = String::new();
     let mut ar = tar::Archive::new(flate2::read::GzDecoder::new(&tgz[..]));
     for e in ar.entries()? {
@@ -268,8 +287,11 @@ pub fn load(cache: &Path) -> Result<Repertoire> {
     if let Some(v) = value(&src, "GAIJI") {
         for (k, s) in map_pairs(v)? {
             let code = num(&k).with_context(|| format!("GAIJI: {k}"))? as usize;
-            let (ku, ten) = ((code >> 8) - 0x20, (code & 0xff) - 0x20);
-            gaiji.insert((ku - 1) * 94 + (ten - 1), s.clone());
+            let (hi, lo) = (code >> 8, code & 0xff);
+            if !(0x21..=0x7e).contains(&hi) || !(0x21..=0x7e).contains(&lo) {
+                bail!("GAIJI のキーが区点でない: {k}");
+            }
+            gaiji.insert((hi - 0x21) * 94 + (lo - 0x21), s.clone());
             out.extend(s.chars().map(|c| c as u32).filter(|&c| !bad(c)));
         }
     } else {
@@ -317,4 +339,44 @@ pub fn run(cache: &Path) -> Result<()> {
     }
     eprintln!("{} code points (denpa {DENPA_COMMIT})", r.codepoints.len());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strings() {
+        assert_eq!(js_string("'a\\'b' rest"), Some(("a'b".to_string(), " rest")));
+        assert_eq!(js_string("\"\\u3042\""), Some(("あ".to_string(), "")));
+        assert_eq!(js_string("x"), None);
+    }
+
+    #[test]
+    fn numbers() {
+        assert_eq!(num(" 0x7c21"), Some(0x7c21));
+        assert_eq!(num("-1"), Some(-1));
+        assert_eq!(num("x"), None);
+    }
+
+    #[test]
+    fn maps() {
+        let src = "new Map<number, string>([\n    // 92区\n    [0x7c21, '➡'],\n    [0x7c58, '(vn)'], // 楽器\n    ['abc', 0x269e],\n]);";
+        assert_eq!(
+            map_pairs(src).unwrap(),
+            vec![
+                ("0x7c21".to_string(), "➡".to_string()),
+                ("0x7c58".to_string(), "(vn)".to_string()),
+                ("abc".to_string(), "0x269e".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn values() {
+        let src = "export const A = \"x\\\"y\";\nexport const B: [number, string][] = [[1,\"z\"]];";
+        assert_eq!(json_prefix(value(src, "A").unwrap()).unwrap(), serde_json::json!("x\"y"));
+        assert_eq!(json_prefix(value(src, "B").unwrap()).unwrap(), serde_json::json!([[1, "z"]]));
+        assert!(value(src, "C").is_none());
+    }
 }

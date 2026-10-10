@@ -288,6 +288,7 @@ name = "denpa-font"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64",
  "delharc",
  "encoding_rs",
  "flate2",

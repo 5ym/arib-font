@@ -43,6 +43,7 @@ jobs:
           VERSION: ${{ steps.v.outputs.version }}
           SOURCE_DATE_EPOCH: ${{ steps.v.outputs.epoch }}
         run: |
+          cargo test --release --locked --manifest-path tools/Cargo.toml
           cargo build --release --locked --manifest-path tools/Cargo.toml
           tools/target/release/denpa-font build "$VERSION"
           # 同じ入力から同じバイト列になること
