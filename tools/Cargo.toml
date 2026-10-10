@@ -1,0 +1,20 @@
+[package]
+name = "denpa-font"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.104"
+delharc = "0.8.0"
+encoding_rs = "0.8.42"
+flate2 = "1.1.10"
+serde_json = "1.0.151"
+sevenz-rust2 = "0.23.0"
+sha2 = "0.11.0"
+skera = "0.8"
+skrifa = "0.48"
+tar = "0.4.46"
+ttf2woff2 = { version = "0.13.3", default-features = false }
+ureq = "3.4.2"
+write-fonts = { version = "0.54", features = ["read"] }
+wuff = "0.2.9"
