@@ -136,6 +136,8 @@ fn expand(parts: &[Part], base: &Base) -> Result<Vec<Part>> {
                     crop: Some(vec![(b.0, TEXT_BAND.0), (b.2, TEXT_BAND.0), (b.2, TEXT_BAND.1), (b.0, TEXT_BAND.1)]),
                     place: Place::Stretch(x, yb, x + (b.2 - b.0) * s, yb + band * s),
                     weight: p.weight,
+                    stem: p.stem,
+                    rotate: 0.0,
                 });
             }
             x += (width(b) + TEXT_GAP) * s;
@@ -178,11 +180,17 @@ pub fn compose(parts: &[Part], base: &Base) -> Result<(Grid, Vec<bool>)> {
             Place::Shift(dx, dy) => (1.0, 1.0, dx, dy),
             Place::CenterX(x) => (1.0, 1.0, x - (r.0 + r.2) / 2.0, 0.0),
         };
-        let tf = |q: &(f64, f64)| (q.0 * sx + tx, q.1 * sy + ty);
+        // 回すときの中心は、置いた墨 (切り抜き) の枠の真ん中
+        let (cx, cy) = ((r.0 + r.2) / 2.0 * sx + tx, (r.1 + r.3) / 2.0 * sy + ty);
+        let (sn, cs) = p.rotate.to_radians().sin_cos();
+        let tf = |q: &(f64, f64)| {
+            let (x, y) = (q.0 * sx + tx - cx, q.1 * sy + ty - cy);
+            (cx + x * cs - y * sn, cy + x * sn + y * cs)
+        };
         let polys: Vec<Poly> = polys.iter().map(|c| c.iter().map(tf).collect()).collect();
         let crop: Option<Poly> = p.crop.as_ref().map(|c| c.iter().map(tf).collect());
         // 縮めた (伸ばした) 線を w の太さに戻す。図形 (輪・枠) は置いた大きさで描くので戻さない
-        let comp = |s: f64| if p.weight > 0.0 && matches!(p.src, Source::Char(_)) && (s - 1.0).abs() > 1e-6 { (p.weight - STEM * s) / 2.0 } else { 0.0 };
+        let comp = |s: f64| if p.weight > 0.0 && matches!(p.src, Source::Char(_)) && (s - 1.0).abs() > 1e-6 { (p.weight - p.stem * s) / 2.0 } else { 0.0 };
         let grow = (comp(sx.abs()), comp(sy.abs()));
         let b = match &crop {
             Some(c) => bbox(std::slice::from_ref(c)).unwrap(),
@@ -240,6 +248,8 @@ pub fn compose_text(text: &str) -> Vec<Part> {
             crop: Some(vec![(0.0, y0), (512.0, y0), (512.0, y1), (0.0, y1)]),
             place: Place::Stretch(x, 280.0 + (y0 - 280.0) * SY, x + 512.0 * SX, 280.0 + (y1 - 280.0) * SY),
             weight: 50.0,
+            stem: STEM,
+            rotate: 0.0,
         });
         x += 512.0 * SX;
     }

@@ -49,6 +49,10 @@ pub struct Part {
     pub place: Place,
     /// 縮めた線を戻す太さ (0 なら戻さない)
     pub weight: f64,
+    /// 元の字の線の太さ (縮めた量を測る元。既定は STEM)
+    pub stem: f64,
+    /// 置いたあと、枠の真ん中を中心に回す角度 (度、反時計回り)
+    pub rotate: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -137,6 +141,8 @@ fn part(text: &str) -> Result<Part> {
     // 置き方
     let mut place = Place::Keep;
     let mut weight = STEM;
+    let mut stem = STEM;
+    let mut rotate = 0.0;
     for tok in tokens(s) {
         if let Some(r) = tok.strip_prefix('>') {
             let v = nums(r)?;
@@ -158,13 +164,17 @@ fn part(text: &str) -> Result<Part> {
             place = Place::Shift(v[0], v[1]);
         } else if let Some(r) = tok.strip_prefix("cx") {
             place = Place::CenterX(r.parse().ctx(|| format!("cx が読めません: {text}"))?);
+        } else if let Some(r) = tok.strip_prefix('r').filter(|r| r.starts_with(|c: char| c.is_ascii_digit() || c == '-')) {
+            rotate = r.parse().ctx(|| format!("r が読めません: {text}"))?;
+        } else if let Some(r) = tok.strip_prefix('s').filter(|r| r.starts_with(|c: char| c.is_ascii_digit())) {
+            stem = r.parse().ctx(|| format!("s が読めません: {text}"))?;
         } else if let Some(r) = tok.strip_prefix('w') {
             weight = r.parse().ctx(|| format!("w が読めません: {text}"))?;
         } else {
             bail!("読めない字句 {tok:?}: {text}");
         }
     }
-    Ok(Part { sub, src, pick, crop, place, weight })
+    Ok(Part { sub, src, pick, crop, place, weight, stem, rotate })
 }
 
 /// 置き方の字句 (> と ~ のあとの数は空白を挟んでもよい)
