@@ -211,7 +211,15 @@ fn build(version: &str) -> Result<()> {
                 cmap.insert(c, g);
                 writeln!(report, "alias   U+{c:04X} U+{t:04X}  # {}", ch(t))?;
             }
-            None => bail!("parts.txt: U+{c:04X} の先 U+{t:04X} がフォントにありません"),
+            // 先が収める字に無ければ (DENPA_ONLY で試すときなど)、元の字から作る
+            None => match base.get(&t) {
+                Some((s, adv)) => {
+                    cmap.insert(c, jobs.len() as u32);
+                    jobs.push((Job::Fillet(s.clone()), *adv));
+                    writeln!(report, "alias   U+{c:04X} U+{t:04X}  # {}", ch(t))?;
+                }
+                None => bail!("parts.txt: U+{c:04X} の先 U+{t:04X} がフォントにありません"),
+            },
         }
     }
     for &c in &repertoire.codepoints {
