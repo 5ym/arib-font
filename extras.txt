@@ -1,10 +1,11 @@
 # 源柔ゴシック等幅に無い字の作り方 (scripts/extras.py が作る。手で直さない)
-# alias U+私用 U+字: 同じ字形 / compose U+私用 文字列: 半角の字を縮めて並べる / copy U+字: 和田研中丸ゴシック2004ARIB から写す
+# alias U+私用 U+字: 同じ字形 / compose U+私用 文字列: 半角の字を縮めて並べる / draw U+字 名前: 元の字から描く / copy U+字: 和田研中丸ゴシック2004ARIB から写す
 copy    U+0FD6  # ࿖
 copy    U+2150  # ⅐
 copy    U+2151  # ⅑
 copy    U+2152  # ⅒
 copy    U+2189  # ↉
+draw    U+233A quaddiamond  # ⌺
 copy    U+2613  # ☓
 copy    U+2614  # ☔
 copy    U+2693  # ⚓

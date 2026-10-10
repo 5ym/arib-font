@@ -2,7 +2,7 @@
 
     python3 scripts/verify.py dist/denpa-font.ttf build/merged.ttf [前の版の denpa-font.ttf]
 
-1. 字の揃い: repertoire.txt の字が全部あること (missing.txt に書いた字を除く)。
+1. 字の揃い: repertoire.txt の字が全部あり、空白のほかは形があること (missing.txt に書いた字を除く)。
    missing.txt の字が入ったら missing.txt から消すこと (一覧を正しく保つ)
 2. 名前: ファミリ名・PostScript 名・ライセンス (nameID 13/14)、em 1024
 3. 絞り込みで描き方が変わっていないこと (合成直後のフォントと全字を比べる。自動ヒンティングは除く)
@@ -11,6 +11,7 @@
 
 import os
 import sys
+import unicodedata
 
 import freetype
 import numpy as np
@@ -59,6 +60,13 @@ extra = set(cmap) - rep
 if extra:
     errors.append(f'repertoire に無い字が入っている {len(extra)}: {label(extra)}')
 print(f'字: repertoire {len(rep)}、入っている {len(rep & set(cmap))}、無い (missing.txt) {len(missing)}')
+
+# 空の字 (形の無いグリフ) が無いこと。空白だけは空でよい。
+# カラー絵文字が既定の字 (🅿 ♨ ☎ ⚡ ⛅ ❗ ⁉ など) も白黒の形を持っていること
+glyf = font['glyf']
+empty = {c for c, g in cmap.items() if glyf[g].numberOfContours == 0 and unicodedata.category(chr(c)) != 'Zs'}
+if empty:
+    errors.append(f'形の無い字: {label(empty)}')
 
 # 2. 名前
 name = font['name']

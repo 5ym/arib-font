@@ -6,6 +6,7 @@ repertoire.txt のうち元 (源柔ゴシック等幅) に無い字を、次の�
   alias    ARIB の外字の私用領域 (U+E0xx〜E3xx) は、和田研の ARIBMAP.csv が示す Unicode 5.2 の字と
            同じ字形にする (cmap で同じグリフを指す)。Unicode に無い 92区26〜31 は同じ漢字
   compose  92区56〜85 (楽器の略記。Unicode に無い) は元の半角の字を横に縮めて並べる
+  draw     元の字から描けるものは描く (⌺ = □ + ひし形)
   copy     それでも無い字は和田研中丸ゴシック2004ARIB からそのまま写す (README に一覧)
 どれでも埋まらない字は missing.txt に書く。
 """
@@ -35,6 +36,9 @@ COMPOSE = dict(zip(range(0xE2A5, 0xE2C3), [
     '(vn)', '(ob)', '(cb)', '(ce', 'mb)', '(hp)', '(br)', '(p)', '(s)', '(ms)', '(t)', '(bs)', '(b)', '(tb)',
     '(tp)', '(ds)', '(ag)', '(eg)', '(vo)', '(fl)', '(ke', 'y)', '(sa', 'x)', '(sy', 'n)', '(or', 'g)', '(pe', 'r)']))
 
+# 元の字から描くもの (scripts/build.py の DRAW)
+DRAW = {0x233A: 'quaddiamond'}  # ⌺: □ にひし形 (番組表の外字)
+
 lines, copies, missing = [], [], []
 need = [c for c in rep if c not in base]
 for c in need:
@@ -53,11 +57,13 @@ for c in need:
             missing.append(c)
     elif c in copies:
         lines.append(f'copy    U+{c:04X}  # {chr(c)}')
+    elif c in DRAW:
+        lines.append(f'draw    U+{c:04X} {DRAW[c]}  # {chr(c)}')
     else:
         missing.append(c)
 
 print('# 源柔ゴシック等幅に無い字の作り方 (scripts/extras.py が作る。手で直さない)')
-print('# alias U+私用 U+字: 同じ字形 / compose U+私用 文字列: 半角の字を縮めて並べる / copy U+字: 和田研中丸ゴシック2004ARIB から写す')
+print('# alias U+私用 U+字: 同じ字形 / compose U+私用 文字列: 半角の字を縮めて並べる / draw U+字 名前: 元の字から描く / copy U+字: 和田研中丸ゴシック2004ARIB から写す')
 print('\n'.join(lines))
 for c in missing:
     print(f'# missing U+{c:04X} {chr(c)}', file=sys.stderr)
