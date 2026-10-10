@@ -183,7 +183,6 @@ fn arc(a: V, ta: V, b: V, tb: V, turn: f64, radius: f64) -> Vec<Pt> {
     }
 }
 
-
 /// まとめた円弧 (細い線の端の半円など): 円を 60° ずつの2次曲線で (a は含まず b は含む)。
 /// 円は a で向き ta に触れ、b を通るもの (b での向きは tb に近い)
 fn arc_n(a: V, ta: V, b: V, tb: V, turn: f64) -> Vec<Pt> {
@@ -209,9 +208,8 @@ fn arc_n(a: V, ta: V, b: V, tb: V, turn: f64) -> Vec<Pt> {
         let ang = a0 + step * i as f64;
         let p = if i == k { b } else { (o.0 + r * ang.cos(), o.1 + r * ang.sin()) };
         let tp = if i == k { tb } else if right { (ang.sin(), -ang.cos()) } else { (-ang.sin(), ang.cos()) };
-        match meet(prev, tprev, p, tp) {
-            Some(c) => out.push(off(c)),
-            None => {}
+        if let Some(c) = meet(prev, tprev, p, tp) {
+            out.push(off(c));
         }
         out.push(on(p));
         prev = p;
@@ -309,8 +307,7 @@ pub fn round_contour(c: &Contour) -> Contour {
     while dedup.len() > 1 && same(&dedup[0], &dedup[dedup.len() - 1]) {
         dedup.pop();
     }
-    let out = dedup;
-    fit::tidy(out)
+    fit::tidy(dedup)
 }
 
 /// 字の全部の輪郭の角を丸める

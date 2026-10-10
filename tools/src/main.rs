@@ -119,7 +119,7 @@ impl OutlinePen for Pen {
 }
 
 /// 元のフォントの字を em 1024 にして読む (.notdef と、Unicode の割り当てのある字)
-fn read_base(font: &FontRef) -> Result<(Contour2, Base)> {
+fn read_base(font: &FontRef) -> Result<((Vec<Contour>, u16), Base)> {
     let upm = font.head()?.units_per_em() as f32;
     let size = Size::new(UPM as f32);
     let outlines = font.outline_glyphs();
@@ -145,7 +145,6 @@ fn read_base(font: &FontRef) -> Result<(Contour2, Base)> {
     }
     Ok((notdef, base))
 }
-type Contour2 = (Vec<Contour>, u16);
 
 fn build(version: &str) -> Result<()> {
     let (major, minor) = version.split_once('.').ctx(|| "版は X.Y".into())?;
@@ -347,9 +346,8 @@ fn tables(base: &FontRef, glyphs: &Glyphs, cmap: &BTreeMap<u32, u32>, major: u16
     if sfnt::u16_at(&os2, 0) < 2 {
         bail!("OS/2 の版が 2 より前");
     }
-    // 平均の字幅 (空白を除く字)
-    let w: Vec<u32> = glyphs.advance.iter().zip(&glyphs.data).filter(|(_, d)| !d.is_empty()).map(|(&a, _)| a as u32).collect();
-    put_i16(&mut os2, 2, (w.iter().sum::<u32>() as f64 / w.len().max(1) as f64).round() as i16);
+    // 平均の字幅は半角の幅 (v2.x と同じ。Windows の GDI はこれを字の幅の目安にする)
+    put_i16(&mut os2, 2, (UPM / 2) as i16);
     // 上付き・下付き・打ち消し線・x の高さ・大文字の高さは em を半分にする
     for o in [10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 86, 88] {
         let v = sfnt::i16_at(&os2, o);
@@ -373,6 +371,7 @@ fn tables(base: &FontRef, glyphs: &Glyphs, cmap: &BTreeMap<u32, u32>, major: u16
         let v = sfnt::i16_at(&post, o);
         put_i16(&mut post, o, half(v));
     }
+    post[12..16].copy_from_slice(&0u32.to_be_bytes()); // isFixedPitch: 全角と半角があるので等幅とは言わない (v2.x と同じ)
     b.add_raw(Tag::new(b"post"), post);
 
     let cm = write_fonts::tables::cmap::Cmap::from_mappings(
