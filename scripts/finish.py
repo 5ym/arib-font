@@ -25,7 +25,7 @@ COPYRIGHT = ('Copyright (c) 2026 danything. Based on Rounded M+ (M+ FONTS PROJEC
              'and WadaLab ChuMaruGo 2004 ARIB/Emoji (WadaLab, RareEarth).')
 LICENSE = ('This font is distributed under the MIT License. '
            'The original glyphs come from Rounded M+ and WadaLab ChuMaruGo 2004; '
-           'their original terms are quoted in README.md at https://github.com/danything/denpa-font')
+           'their original terms are quoted in https://github.com/danything/denpa-font/blob/main/README.md .')
 LICENSE_URL = 'https://github.com/danything/denpa-font/blob/main/LICENSE'
 VENDOR_URL = 'https://github.com/danything/denpa-font'
 
