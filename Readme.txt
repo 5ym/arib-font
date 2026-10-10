@@ -60,7 +60,10 @@ Dockerfile の道具 (Debian の版と apt を日付で固定) の中で build.s
   $ docker run --rm -v "$PWD:/w" -e VERSION=1.0 denpa-font-tools ./build.sh
   $ docker run --rm -v "$PWD:/w" denpa-font-tools python3 scripts/verify.py dist/denpa-font.ttf build/merged.ttf [前の版.ttf]
 verify.py は字の揃い (repertoire.txt − missing.txt)、名前、絞る前後の描き方、前の版
-からの描き方の変化 (expected-changes.txt に書いた字だけ許す) を確かめます。
+からの描き方の変化を確かめます (PR・main・タグのたびに CI が動く)。字の描き方を変え
+る PR では、変わる字を同じ PR で expected-changes.txt に書きます (リリースのあと空に
+戻す)。repertoire.txt と denpa の表のずれは CI では見ていないので、denpa の表を変え
+たら作り直してください。
 
 ■版
 タグは vX.Y (例 v1.0)。字を減らす・字の幅や行の高さを変えるときは X、字を足す・直
