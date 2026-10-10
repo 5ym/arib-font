@@ -67,6 +67,14 @@ BIZ UDゴシックの許諾には予約フォント名がありませんが、�
 [source-bizudgothic-1.051](https://github.com/danything/denpa-font/releases/tag/source-bizudgothic-1.051) に置き、
 [fetch.sh](fetch.sh) はそこから取って sha256 で照らします。元のフォントは em 2048 なので、半分 (em 1024) にして使います。
 
+**元フォントの版上げ:** fetch.sh の `BIZ_VERSION` は Renovate が上流の GitHub リリースのタグを追い、新しい版が出ると PR を出します。
+sha256 は Renovate では書き換えられないので、その PR のブランチへの push で [source-bump.yml](.github/workflows/source-bump.yml) が動き、
+上流の zip と許諾文を取って sha256 を測り、リリース `source-bizudgothic-<版>` に置き、fetch.sh の sha256 を書き換えてコミットします
+(GitHub Apps・デプロイキーは使わず GITHUB_TOKEN だけ。許諾文に予約フォント名が足されていたら止まる)。
+GITHUB_TOKEN の push では CI が動かないので、同じワークフローがそのコミットを build.yml で確かめ、必須チェック (build・claude-review) の status を付けます。
+動かなかったときは、Actions の source-bump を `workflow_dispatch` でそのブランチを渡して回します。
+**字の形が変わるので自動ではマージしません。** CI のジョブの要約 (前の版から描き方が変わった字) と見本 (artifact の `changes`) を見て、人が入れます。
+
 ## 作り方
 
 **丸め方** (`tools/src/fillet.rs`): BIZ UDゴシックの字は、輪郭のまま角ごとに円弧を入れます。

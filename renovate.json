@@ -14,15 +14,32 @@
         "# renovate: datasource=git-refs depName=(?<depName>\\S+) branch=(?<currentValue>\\S+)\\s+\\w+=(?<currentDigest>[0-9a-f]{40})"
       ],
       "datasourceTemplate": "git-refs"
+    },
+    {
+      "description": "fetch.sh の元フォント (BIZ UDゴシック) の版。GitHub のリリースのタグを追う。sha256 は Renovate では書き換えられないので、PR のブランチで source-bump.yml が書き換える",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^fetch\\.sh$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=github-releases depName=(?<depName>\\S+)\\s+\\w+=(?<currentValue>\\S+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "loose"
     }
   ],
   "packageRules": [
     {
-      "description": "fontations (skrifa・write-fonts・skera) は同じ版どうしでしか組めないので 1 本の PR にまとめ、CI (verify が字を全部比べる) が通れば入れる",
+      "description": "fontations (skrifa・write-fonts) は同じ版どうしでしか組めないので 1 本の PR にまとめ、CI (verify が字を全部比べる) が通れば入れる",
       "matchManagers": ["cargo"],
-      "matchPackageNames": ["skrifa", "write-fonts", "read-fonts", "skera"],
+      "matchPackageNames": ["skrifa", "write-fonts", "read-fonts"],
       "groupName": "fontations",
       "automerge": true
+    },
+    {
+      "description": "元フォントの版上げは字の形が変わるので自動では入れない。CI の「前の版から変わった字」の要約と見本 (artifact の changes) を人が見て入れる",
+      "matchDepNames": ["googlefonts/morisawa-biz-ud-gothic"],
+      "automerge": false
     }
   ]
 }

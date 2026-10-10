@@ -6,6 +6,13 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+  # 元フォントの版上げ (source-bump.yml) が、sha256 を書き換えたコミットを確かめるときに呼ぶ
+  workflow_call:
+    inputs:
+      ref:
+        description: 確かめるコミット
+        type: string
+        required: true
 
 permissions:
   contents: read
@@ -17,6 +24,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 1
+          # 呼ばれたときは渡されたコミット (無ければいつもどおり)
+          ref: ${{ inputs.ref }}
 
       - name: Version
         id: v
