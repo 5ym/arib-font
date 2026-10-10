@@ -8,7 +8,7 @@ mkdir -p "$S/denpa"
 
 # 字の一覧を作る denpa の表の版 (Renovate が追う)
 # renovate: datasource=git-refs depName=https://github.com/danything/denpa branch=main
-DENPA_COMMIT=4e71a4bede67a324edec1fae2d147e1137a40924
+DENPA_COMMIT=b3c99262f24b42805bfba620177920672f70b054
 # EUC-JP の表 (WHATWG Encoding Standard の index-jis0208。ブラウザの TextDecoder と同じ字)
 # renovate: datasource=git-refs depName=https://github.com/whatwg/encoding branch=main
 WHATWG_ENCODING_COMMIT=a985b62a9b45c17da3e17a9f0a0b4e30c34c4a8a
